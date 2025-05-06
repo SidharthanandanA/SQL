@@ -1,7 +1,7 @@
 /*
- Purchase Data Latest (PJD)
+ Purchase Data Latest (PJDR)
  04-03-2025
- G3254
+ 
  Old Updates
  24-07-2024 - added supplier name
  23-08-2024 - New order by clause
@@ -18,7 +18,7 @@
  11-12-2024 --Added Cancellation Status
  13-02-2025 --Modified AED values to be divided by 3.6725
  17-03-2025 --Duplicate values removed
- 21-03-2025 --Amount Paid Date modified
+ 21-03-2025 --Amount paid date modified
  05-05-2024 :
  1. Seller Broker Name
  2. Customer Broker Name
@@ -33,7 +33,7 @@
  Added the above columns
  
  Last Modifiied By - Sidharth A
- Last Modifiied On : 05-05-2024 15:55 IST
+ Last Modifiied On : 05-05-2025 12:32 IST
  
  Uploaded On PROD : 17-03-2025 12:25 IST
  
@@ -66,52 +66,24 @@ InquiryBrokerDetails AS (
     Select
         InquiryFuelDetailId,
         InquiryDetailId,
-        ab.Name AS SellerBrokerName,
-        abb.Name AS CustomerBrokerName,
+        SellerBrokerId,
+        CustomerBrokerId,
         SellerBrokerage,
         CustomerBrokerage,
         SellerExchangeRate,
         CustomerExchangeRate,
         SellerUnitLumpSum,
-        CASE
-			WHEN SellerUnitLumpSum = 0 THEN um.Description
-			ELSE NULL
-        END AS SellerUnit,
+        um.Description AS SellerUnit,
         CustomerUnitLumpsum,
-		CASE
-			WHEN CustomerUnitLumpsum = 0 THEN cum.Description
-			ELSE NULL
-        END AS CustomerUnit,
-		SellerCurrencyId,
-		CustomerCurrencyId
+        cum.Description AS CustomerUnit,
+        SellerCurrencyId,
+        CustomerCurrencyId
     from
         AppInquiryBrokerDetails aibd
         LEFT JOIN UnitMapping um ON um.UnitId = aibd.SellerUnit
         LEFT JOIN UnitMapping cum ON cum.UnitId = aibd.CustomerUnit
-        LEFT JOIN AppBrokers ab ON ab.Id = aibd.SellerBrokerId
-        and ab.IsDeleted = 0
-        LEFT JOIN AppBrokers abb ON abb.Id = aibd.CustomerBrokerId
-        and abb.IsDeleted = 0
     WHERE
         aibd.isdeleted = 0
-),
-InquiryFuelDetails AS (
-    Select
-        QuantityMin,
-        QuantityMax,
-        Unit,
-        [Description],
-        TradeType,
-        InquiryDetailId,
-        Id,
-        SellerId,
-        GradeSpecId,
-        FuelId
-    from
-        AppInquiryFuelDetails aifd
-    WHERE
-        aifd.isDeleted = 0
-        and aifd.isLosted = 0
 ),
 InquiryMiscCostSeller AS (
     Select
@@ -154,7 +126,7 @@ StemDate AS (
 ),
 GSData AS (
     SELECT
-        'GS' AS 'Data source',
+        DISTINCT 'GS' AS 'Data source',
         aid.Code AS 'Job code',
         av.Name AS 'Vessel name',
         ap.Name AS 'Port name',
@@ -170,9 +142,9 @@ GSData AS (
             asell.Name,
             asel.Name
         ) AS 'Seller name',
-        COALESCE(asuppp.Name, asupp.Name) AS 'Supplier name',
-        COALESCE(abro.Name, SellerBrokerName) AS 'Seller Broker Name',
-        CustomerBrokerName AS 'Customer Broker Name',
+        COALESCE(asuppp.Name, asupp.Name, asup.Name) AS 'Supplier name',
+        COALESCE(abro.Name, ab.name) AS 'Seller Broker Name',
+        abb.name AS 'Customer Broker Name',
         CASE
             WHEN aibd.SellerUnitLumpsum = 0 THEN 'Unit'
             WHEN aibd.SellerUnitLumpsum = 1 THEN 'Lumpsum'
@@ -544,13 +516,15 @@ GSData AS (
         and av.isdeleted = 0
         LEFT JOIN AppPorts ap ON ap.id = aid.portNominationId
         and ap.isdeleted = 0
-        JOIN InquiryFuelDetails aifd ON aifd.inquirydetailid = aid.id
+        LEFT JOIN AppInquiryFuelDetails aifd ON aifd.inquirydetailid = aid.id
+        and aifd.isdeleted = 0
+        and aifd.islosted = 0
         JOIN AppInquirySellerDetails aisd ON aisd.InquiryFuelDetailId = aifd.id
         and aifd.sellerid = aisd.sellerid
         and aisd.isdeleted = 0
         JOIN StemDate ain ON ain.InquiryDetailId = aifd.InquiryDetailId
         and ain.IsDeleted = 0
-        and ain.InquirySellerDetailId = aisd.Id
+        AND ain.InquirySellerDetailId = aisd.Id
         LEFT JOIN AppDeliveries ad ON ad.InquiryFuelDetailId = aifd.Id
         and ad.isdeleted = 0
         LEFT JOIN AppSellers asel ON asel.id = aifd.SellerId
@@ -603,11 +577,15 @@ GSData AS (
         and imc.InquiryDetailId = aisd.InquiryDetailId
         LEFT JOIN InquiryBrokerDetails aibd ON aibd.InquiryFuelDetailId = aifd.Id
         and aibd.InquiryDetailId = aifd.InquiryDetailId
-		LEFT JOIN UnitMapping BDNUnit ON BDNUnit.UnitId = ad.BdnQtyUnit
-		LEFT JOIN AppCurrencies bsc ON bsc.Id = aibd.SellerCurrencyId
+        LEFT JOIN AppBrokers ab ON ab.Id = aibd.SellerBrokerId
+        and ab.IsDeleted = 0
+        LEFT JOIN AppBrokers abb ON abb.Id = aibd.SellerBrokerId
+        and abb.IsDeleted = 0
+        LEFT JOIN AppCurrencies bsc ON bsc.Id = aibd.SellerCurrencyId
         and bsc.isdeleted = 0
         LEFT JOIN AppCurrencies bcc ON bcc.Id = aibd.CustomerCurrencyId
         and bcc.isdeleted = 0
+        LEFT JOIN UnitMapping BDNUnit ON BDNUnit.UnitId = ad.BdnQtyUnit
     WHERE
         aid.InquiryStatus IN (650, 700, 800, 900, 1000, 9000)
 ),
@@ -726,7 +704,7 @@ UNIONALLCTE AS (
 Select
     *
 from
-    UNIONALLCTE --where [Data source] = 'GS' and DatePaid is null and [Payment Status] = 'Paid'
+    UNIONALLCTE
 ORDER BY
     CASE
         WHEN [Data Source] = 'GS' THEN 0
