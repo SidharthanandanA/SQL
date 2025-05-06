@@ -22,17 +22,17 @@
  21-03-2024 - Replaced Ack date to Amount Received date
  21-03-2024 - Misc Cost Added for Booked stems
  05-05-2024 :
-    1. Seller Broker Name
-    2. Customer Broker Name
-    3. Seller UNIT/LUMPSUM
-    4. Seller UNIT
-    5. Customer UNIT/LUMPSUM
-    6. Customer UNIT
-    7. Seller Brokerage
-    8. Seller Brokerage(USD)
-    9. Customer Brokerage
-    10. Customer Brokerage(USD)
-Added the above columns
+ 1. Seller Broker Name
+ 2. Customer Broker Name
+ 3. Seller UNIT/LUMPSUM
+ 4. Seller UNIT
+ 5. Customer UNIT/LUMPSUM
+ 6. Customer UNIT
+ 7. Seller Brokerage
+ 8. Seller Brokerage(USD)
+ 9. Customer Brokerage
+ 10. Customer Brokerage(USD)
+ Added the above columns
  */
 WITH InquiryMiscCostCustomer AS (
     Select
@@ -48,26 +48,81 @@ WITH InquiryMiscCostCustomer AS (
         aimc.InquiryDetailId,
         aimc.InquirySellerDetailId
 ),
-InquiryBrokerDetails AS (
-    Select
-        InquiryFuelDetailId,
-        InquiryDetailId,
-        SellerBrokerId,
-        CustomerBrokerId,
-        SellerBrokerage,
-        CustomerBrokerage,
-        SellerExchangeRate,
-        CustomerExchangeRate,
-        SellerUnitLumpSum,
-        SellerUnit,
-        CustomerUnitLumpsum,
-        CustomerUnit,
-        SellerCurrencyId,
-        CustomerCurrencyId
-    from
+InquiryBrokerDetailsCTE AS (
+    SELECT
+        aibd.Id,
+        aibd.InquiryDetailId,
+        aibd.InquiryFuelDetailId,
+        aibd.SellerBrokerage,
+        sel.Code AS 'Seller Currency',
+        CASE
+            WHEN sel.Code = 'AED' THEN ROUND(aibd.SellerBrokerage / 3.6725, 2)
+            ELSE ROUND(
+                aibd.SellerBrokerage * aibd.SellerExchangeRate,
+                2
+            )
+        END AS 'Seller Brokerage(USD)',
+        sb.Name AS 'Seller Broker Name',
+        CASE
+            WHEN aibd.SellerUnitLumpsum = 0 THEN 'Unit'
+            ELSE 'Lumpsum'
+        END AS SellerUnitLumpsum,
+        CASE
+            WHEN aibd.SellerUnitLumpsum = 1 THEN NULL
+            ELSE CASE
+                WHEN aibd.SellerUnit = 0 THEN 'MT'
+                WHEN aibd.SellerUnit = 1 THEN 'KG'
+                WHEN aibd.SellerUnit = 2 THEN 'Litres'
+                WHEN aibd.SellerUnit = 3 THEN 'IG'
+                WHEN aibd.SellerUnit = 4 THEN 'CBM'
+                WHEN aibd.SellerUnit = 5 THEN 'US Gallons'
+                WHEN aibd.SellerUnit = 6 THEN 'Barrels'
+                WHEN aibd.SellerUnit = 7 THEN 'KL'
+            END
+        END AS SellerUnit,
+        aibd.CustomerBrokerage,
+        cust.Code AS 'Customer Currency',
+        CASE
+            WHEN cust.Code = 'AED' THEN ROUND(aibd.CustomerBrokerage / 3.6725, 2)
+            ELSE ROUND(
+                aibd.CustomerBrokerage * aibd.CustomerExchangeRate,
+                2
+            )
+        END AS 'Customer Brokerage(USD)',
+        cb.Name AS 'Customer Broker Name',
+        CASE
+            WHEN aibd.CustomerUnitLumpsum = 0 THEN 'Unit'
+            ELSE 'Lumpsum'
+        END AS CustomerUnitLumpsum,
+        CASE
+            WHEN aibd.CustomerUnitLumpsum = 1 THEN NULL
+            ELSE CASE
+                WHEN aibd.CustomerUnit = 0 THEN 'MT'
+                WHEN aibd.CustomerUnit = 1 THEN 'KG'
+                WHEN aibd.CustomerUnit = 2 THEN 'Litres'
+                WHEN aibd.CustomerUnit = 3 THEN 'IG'
+                WHEN aibd.CustomerUnit = 4 THEN 'CBM'
+                WHEN aibd.CustomerUnit = 5 THEN 'US Gallons'
+                WHEN aibd.CustomerUnit = 6 THEN 'Barrels'
+                WHEN aibd.CustomerUnit = 7 THEN 'KL'
+            END
+        END AS CustomerUnit
+    FROM
         AppInquiryBrokerDetails aibd
+        LEFT JOIN AppCurrencies sel ON sel.Id = aibd.SellerCurrencyId
+        AND sel.IsDeleted = 0
+        LEFT JOIN AppCurrencies cust ON cust.Id = aibd.CustomerCurrencyId
+        AND cust.IsDeleted = 0
+        LEFT JOIN AppBrokers sb ON sb.Id = aibd.SellerBrokerId
+        AND sb.IsDeleted = 0
+        LEFT JOIN AppBrokers cb ON cb.Id = aibd.CustomerBrokerId
+        AND cb.IsDeleted = 0
     WHERE
-        aibd.isdeleted = 0
+        (
+            CustomerBrokerage IS NOT NULL
+            OR SellerBrokerage IS NOT NULL
+        )
+        AND aibd.IsDeleted = 0
 ),
 InquiryMiscCostSeller AS (
     Select
@@ -96,36 +151,12 @@ ExpCTE AS (
         acg.Name AS 'Customer group',
         aco.Name AS 'Incorporation Jurisdiction',
         asup.Name AS 'Supplier name',
-        ab.name AS 'Seller Broker Name',
-        abb.name AS 'Customer Broker Name',
-        CASE
-            WHEN aibd.SellerUnitLumpsum = 0 THEN 'Unit'
-            WHEN aibd.SellerUnitLumpsum = 1 THEN 'Lumpsum'
-        END AS 'Seller Broker Unit/Lumpsum',
-        CASE
-            WHEN aibd.SellerUnit = 0 THEN 'MT'
-            WHEN aibd.SellerUnit = 1 THEN 'KG'
-            WHEN aibd.SellerUnit = 2 THEN 'Litres'
-            WHEN aibd.SellerUnit = 3 THEN 'IG'
-            WHEN aibd.SellerUnit = 4 THEN 'CBM'
-            WHEN aibd.SellerUnit = 5 THEN 'US Gallons'
-            WHEN aibd.SellerUnit = 6 THEN 'Barrels'
-            WHEN aibd.SellerUnit = 7 THEN 'KL'
-        END AS 'Seller Broker Unit',
-        CASE
-            WHEN aibd.CustomerUnitLumpsum = 0 THEN 'Unit'
-            WHEN aibd.CustomerUnitLumpsum = 1 THEN 'Lumpsum'
-        END AS 'Customer Broker Unit/Lumpsum',
-        CASE
-            WHEN aibd.CustomerUnit = 0 THEN 'MT'
-            WHEN aibd.CustomerUnit = 1 THEN 'KG'
-            WHEN aibd.CustomerUnit = 2 THEN 'Litres'
-            WHEN aibd.CustomerUnit = 3 THEN 'IG'
-            WHEN aibd.CustomerUnit = 4 THEN 'CBM'
-            WHEN aibd.CustomerUnit = 5 THEN 'US Gallons'
-            WHEN aibd.CustomerUnit = 6 THEN 'Barrels'
-            WHEN aibd.CustomerUnit = 7 THEN 'KL'
-        END AS 'Customer Broker Unit',
+        aibd.[Seller Broker Name],
+        aibd.[Customer Broker Name],
+        aibd.SellerUnitLumpsum,
+        aibd.SellerUnit,
+        aibd.CustomerUnitLumpsum,
+        aibd.CustomerUnit,
         aic.InvoiceCode AS 'Invoice number',
         CONVERT(DATE, aic.ApprovedOn) AS 'Invoice date',
         CASE
@@ -397,28 +428,12 @@ ExpCTE AS (
                 2
             )
         END AS 'Buying Price(USD)',
-        aibd.CustomerBrokerage AS 'Customer Brokerage',
-        CASE
-            WHEN bcc.Code = 'AED' THEN ROUND(
-                aibd.CustomerBrokerage / 3.6725,
-                2
-            )
-            WHEN bcc.Code <> 'AED' THEN ROUND(
-                aibd.CustomerBrokerage * aibd.CustomerExchangeRate,
-                2
-            )
-        END AS 'Customer Brokerage(USD)',
-        aibd.SellerBrokerage AS 'Seller Brokerage',
-        CASE
-            WHEN bsc.Code = 'AED' THEN ROUND(
-                aibd.SellerBrokerage / 3.6725,
-                2
-            )
-            WHEN bsc.Code <> 'AED' THEN ROUND(
-                aibd.SellerBrokerage * aibd.SellerExchangeRate,
-                2
-            )
-        END AS 'Seller Brokerage(USD)',
+        aibd.CustomerBrokerage,
+        aibd.[Customer Currency],
+        aibd.[Customer Brokerage(USD)],
+        aibd.SellerBrokerage,
+        aibd.[Seller Currency],
+        aibd.[Seller Brokerage(USD)],
         ROUND(aim.Margin, 2) AS 'Margin',
         NULL AS MiscCostItemOneName,
         NULL AS MiscCostItemOneAmount,
@@ -553,16 +568,8 @@ ExpCTE AS (
         and ims.InquiryDetailId = aisd.InquiryDetailId
         LEFT JOIN InquiryMiscCostCustomer imc ON imc.InquirySellerDetailId = aisd.Id
         and imc.InquiryDetailId = aisd.InquiryDetailId
-        LEFT JOIN InquiryBrokerDetails aibd ON aibd.InquiryFuelDetailId = aifd.Id
-        and aibd.InquiryDetailId = aifd.InquiryDetailId
-        LEFT JOIN AppBrokers ab ON ab.Id = aibd.SellerBrokerId
-        and ab.IsDeleted = 0
-        LEFT JOIN AppBrokers abb ON abb.Id = aibd.SellerBrokerId
-        and abb.IsDeleted = 0
-        LEFT JOIN AppCurrencies bsc ON bsc.Id = aibd.SellerCurrencyId
-        and bsc.isdeleted = 0
-        LEFT JOIN AppCurrencies bcc ON bcc.Id = aibd.CustomerCurrencyId
-        and bcc.isdeleted = 0
+        LEFT JOIN InquiryBrokerDetailsCTE aibd ON aibd.InquiryFuelDetailId = aifd.Id
+        and aibd.InquiryDetailId = aid.Id
     WHERE
         aid.InquiryStatus IN (650, 700, 800, 900, 1000, 9000)
 ),
@@ -611,10 +618,12 @@ HistoricalData AS (
         BuyingPrice AS 'Buying price',
         NULL as 'Buying Price Currency type',
         NULL AS 'Buying Price(USD)',
-        NULL AS 'Customer Brokerage',
-        NULL AS 'Customer Brokerage(USD)',
-        NULL AS 'Seller Brokerage',
-        NULL AS 'Seller Brokerage(USD)',
+        NULL AS CustomerBrokerage,
+        NULL AS [Customer Currency],
+        NULL AS [Customer Brokerage(USD)],
+        NULL AS SellerBrokerage,
+        NULL AS [Seller Currency],
+        NULL AS [Seller Brokerage(USD)],
         ROUND(Margin, 2) AS 'Margin',
         MiscCostItemOneName,
         MiscCostItemOneAmount,
@@ -677,7 +686,7 @@ UnionCTE AS (
 Select
     *
 from
-    UnionCTE --where [Job Code] IN ('G3127', 'G3115', 'G2854')
+    UnionCTE --where [Job Code] IN ('G3254')
 ORDER BY
     CASE
         WHEN [Data Source] = 'GS' THEN 0
