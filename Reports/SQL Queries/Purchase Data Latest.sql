@@ -5,7 +5,7 @@
  Old Updates
  24-07-2024 - added supplier name
  23-08-2024 - New order by clause
-
+ 
  28-08-2024 - Added new columns BDN Unit, and Payment Status
  
  08-09-2024 --Modified query
@@ -136,7 +136,7 @@ StemDate AS (
     Select
         ain.InquiryDetailId,
         ain.BookedOn,
-		ain.NominatedOn,
+        ain.NominatedOn,
         ain.StemDate,
         ain.Id,
         ain.QuantityMax,
@@ -165,8 +165,8 @@ GSData AS (
         av.Name AS 'Vessel name',
         ap.Name AS 'Port name',
         CONVERT(DATE, COALESCE(ain.StemDate, ain.BookedOn)) AS 'Stem date',
-		CONVERT(DATE, ain.BookedOn) AS 'Seller Nomination Sent On',
-		CONVERT(DATE, ain.NominatedOn) AS 'Customer Nomination Sent On',
+        CONVERT(DATE, ain.BookedOn) AS 'Seller Nomination Sent On',
+        CONVERT(DATE, ain.NominatedOn) AS 'Customer Nomination Sent On',
         CONVERT(DATE, aid.DeliveryStartDateNomination) AS 'Delivery start date',
         CONVERT(DATE, ad.DeliveryDate) AS 'Delivery date',
         COALESCE(
@@ -509,10 +509,21 @@ GSData AS (
             WHEN bc.Code = 'AED' THEN ROUND(ais.SubTotal / 3.6725, 2)
             WHEN bc.Code <> 'AED' THEN ROUND(ais.SubTotal * aio.ExchangeRate, 2)
         END AS 'Seller invoice sub total(USD)',
-        ais.AmountPaidSoFar AS 'Amount paid',
         CASE
-            WHEN bc.Code = 'AED' THEN ROUND(ais.AmountPaidSoFar / 3.6725, 2)
-            WHEN bc.Code <> 'AED' THEN ROUND(ais.AmountPaidSoFar * aio.ExchangeRate, 2)
+            WHEN aps.AmountPaid IS NOT NULL
+            AND aps.AmountPaid <> 0 THEN ais.AmountPaidSoFar + aps.AmountPaid
+            ELSE ais.AmountPaidSoFar
+        END AS 'Amount paid',
+        CASE
+            WHEN aps.AmountPaid IS NOT NULL
+            AND aps.AmountPaid <> 0 THEN CASE
+                WHEN bc.Code = 'AED' THEN ROUND(ais.AmountPaidSoFar / 3.6725, 2) + ROUND(aps.AmountPaid / 3.6725, 2)
+                WHEN bc.Code <> 'AED' THEN ROUND(ais.AmountPaidSoFar * aio.ExchangeRate, 2) + ROUND(aps.AmountPaid * aio.ExchangeRate, 2)
+            END
+            ELSE CASE
+                WHEN bc.Code = 'AED' THEN ROUND(ais.AmountPaidSoFar / 3.6725, 2)
+                WHEN bc.Code <> 'AED' THEN ROUND(ais.AmountPaidSoFar * aio.ExchangeRate, 2)
+            END
         END AS 'Amount paid(USD)',
         COALESCE(ais.SellerGradeMiscCost, ims.Amount) AS 'Seller Grade Misc Cost',
         ais.AdditionalCost AS 'SellerInvAddlCost',
@@ -566,6 +577,8 @@ GSData AS (
         and agss.IsDeleted = 0
         LEFT JOIN AppInvoiceSellers ais ON ais.InquiryFuelDetailId = aifd.Id
         and ais.IsDeleted = 0
+        LEFT JOIN AppProformaSellers aps ON aps.InquiryFuelDetailId = aifd.Id
+        and aps.IsDeleted = 0
         LEFT JOIN AppSellers asell ON asell.Id = ais.SellerId
         and asell.IsDeleted = 0
         LEFT JOIN AppSellers aselll ON aselll.Id = ais.CounterpartyName
@@ -610,8 +623,8 @@ HistoricalData AS (
         VesselName AS 'Vessel name',
         PortName AS 'Port name',
         CONVERT(date, StemDate) AS 'Stem date',
-		NULL AS 'Seller Nomination Sent On',
-		NULL AS 'Customer Nomination Sent On',
+        NULL AS 'Seller Nomination Sent On',
+        NULL AS 'Customer Nomination Sent On',
         CONVERT(date, DeliveryStartDate) AS 'Delivery start date',
         CONVERT(date, DeliveryDate) AS 'Delivery date',
         SellerName AS 'Seller name',

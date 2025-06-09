@@ -459,10 +459,21 @@ ExpCTE AS (
             WHEN sel.Code = 'AED' THEN ROUND(aic.SubTotal / 3.6725, 2)
             WHEN sel.Code <> 'AED' THEN ROUND(aic.SubTotal * aim.ExchangeRate, 2)
         END AS 'Customer invoice sub total(USD)',
-        ROUND(aic.AmountReceivedSoFar, 2) AS 'Amount received',
         CASE
-            WHEN sel.Code = 'AED' THEN ROUND(aic.AmountReceivedSoFar / 3.6725, 2)
-            WHEN sel.Code = 'AED' THEN ROUND(aic.AmountReceivedSoFar * aim.ExchangeRate, 2)
+            WHEN apc.AmountReceived IS NOT NULL
+            AND apc.AmountReceived <> 0 THEN aic.AmountReceivedSoFar + apc.AmountReceived
+            ELSE aic.AmountReceivedSoFar
+        END AS 'Amount received',
+        CASE
+            WHEN apc.AmountReceived IS NOT NULL
+            AND apc.AmountReceived <> 0 THEN CASE
+                WHEN sel.Code = 'AED' THEN ROUND(aic.AmountReceivedSoFar / 3.6725, 2) + ROUND(apc.AmountReceived / 3.6725, 2)
+                WHEN sel.Code <> 'AED' THEN ROUND(aic.AmountReceivedSoFar * aio.ExchangeRate, 2) + ROUND(apc.AmountReceived * aio.ExchangeRate, 2)
+            END
+            ELSE CASE
+                WHEN sel.Code = 'AED' THEN ROUND(aic.AmountReceivedSoFar / 3.6725, 2)
+                WHEN sel.Code <> 'AED' THEN ROUND(aic.AmountReceivedSoFar * aio.ExchangeRate, 2)
+            END
         END AS 'Amount received(USD)',
         COALESCE(aic.BuyerGradeMiscCost, imc.Amount) AS 'Customer Grade Misc Cost',
         aic.AdditionalCost AS 'CustomerInvAddlCost',
@@ -554,6 +565,8 @@ ExpCTE AS (
         and aup.IsDeleted = 0
         LEFT JOIN AppInvoiceCustomers aic ON aic.InquiryFuelDetailId = aifd.Id
         and aic.IsDeleted = 0
+        LEFT JOIN AppProformaCustomers apc ON apc.InquiryFuelDetailId = aifd.Id
+        and apc.IsDeleted = 0
         LEFT JOIN AppInvoiceSellers ais ON ais.InquiryFuelDetailId = aifd.Id
         and ais.IsDeleted = 0
         and ais.InvoiceType = 0
