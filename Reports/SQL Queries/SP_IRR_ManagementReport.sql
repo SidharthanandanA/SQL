@@ -1,14 +1,304 @@
 -- ===================================================
--- Procedure Name: SP_IRR_ManagementReport
+-- Procedure Name: SP_IRR_ManagementReport 
 -- Created By: Sidharth A
 -- Created On: 2025-06-07
 -- Version: 1.0
 -- Description: Income Report for Management Report
 -- Change Log:
 -- 1.0 - Initial creation (2025-06-07)
+-- 1.1 - Proforma amounts added to Amount Received (2025-06-09)
 -- ===================================================
-
-WITH MISubInvoiceTable AS (
+WITH MISubProformaTable AS (
+    SELECT
+        aic.Id,
+        aic.InquiryDetailId,
+        aic.InquiryFuelDetailId,
+        aic.InquirySellerDetailId,
+        aifd.Description,
+        aic.MergeCode,
+        aic.OrderedQuantity,
+        aic.SubTotal,
+        aic.InvoiceNumber,
+        aio.CurrencyId,
+        aim.BuyPrice,
+        (aimc.AmountUsd / aio.ExchangeRate) AS 'MiscCostGradeLC',
+        CASE
+            WHEN (
+                (aic.AdditionalCost / aio.ExchangeRate) != 0
+                AND (aic.AdditionalCost / aio.ExchangeRate) IS NOT NULL
+            ) THEN (aic.AdditionalCost / aio.ExchangeRate) * (
+                aic.OrderedQuantity * 1.0 / SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
+            )
+            ELSE LAG((aic.AdditionalCost / aio.ExchangeRate)) OVER (
+                PARTITION BY aic.InquiryDetailId,
+                aic.MergeCode
+                ORDER BY
+                    aifd.Description
+            ) * (
+                aic.OrderedQuantity * 1.0 / SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
+            )
+        END AS 'AdditionalCost',
+        CASE
+            WHEN (
+                (aic.AdditionalCost) != 0
+                AND (aic.AdditionalCost) IS NOT NULL
+            ) THEN (aic.AdditionalCost) * (
+                aic.OrderedQuantity * 1.0 / SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
+            )
+            ELSE LAG((aic.AdditionalCost)) OVER (
+                PARTITION BY aic.InquiryDetailId,
+                aic.MergeCode
+                ORDER BY
+                    aifd.Description
+            ) * (
+                aic.OrderedQuantity * 1.0 / SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
+            )
+        END AS 'AdditionalCostUSD',
+        CASE
+            WHEN (
+                (aic.VatAmount) != 0
+                AND (aic.VatAmount) IS NOT NULL
+            ) THEN (aic.VatAmount) * (
+                aic.OrderedQuantity * 1.0 / SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
+            )
+            ELSE LAG((aic.VatAmount)) OVER (
+                PARTITION BY aic.InquiryDetailId,
+                aic.MergeCode
+                ORDER BY
+                    aifd.Description
+            ) * (
+                aic.OrderedQuantity * 1.0 / SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
+            )
+        END AS 'VatAmount',
+        aic.OrderedQuantity * 1.0 / SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode) AS 'Weights'
+    FROM
+        AppProformaSellers aic
+        JOIN (
+            SELECT
+                id,
+                Description,
+                SellerId
+            FROM
+                AppInquiryFuelDetails
+            WHERE
+                IsDeleted = 0
+                AND IsLosted = 0
+        ) aifd ON aifd.Id = aic.InquiryFuelDetailId
+        LEFT JOIN (
+            SELECT
+                ProformaSellerId,
+                SUM(Amount) AS Amount,
+                SUM(AmountUsd) AS AmountUsd
+            FROM
+                AppProformaMiscCosts
+            WHERE
+                IsDeleted = 0
+            GROUP BY
+                ProformaSellerId
+        ) aimc ON aimc.ProformaSellerId = aic.Id
+        LEFT JOIN AppInquiryOffers aio ON aio.InquiryDetailId = aic.InquiryDetailId
+        and aio.SellerId = aifd.SellerId
+        and aio.isdeleted = 0
+        LEFT JOIN AppInquiryMargins aim ON aim.InquiryDetailId = aic.InquiryDetailId
+        and aim.InquirySellerDetailId = aic.InquirySellerDetailId
+        and aim.isdeleted = 0
+    WHERE
+        aic.IsDeleted = 0
+        AND MergeCode IS NOT NULL
+),
+ProformaSellerTable AS (
+    SELECT
+        aic.Id,
+        aic.InquiryDetailId,
+        aic.MergeCode,
+        aic.InquiryFuelDetailId,
+        aic.InvoiceNumber,
+        aio.CurrencyId,
+        aio.ExchangeRate,
+        aim.BuyPrice,
+        sct.AdditionalCost,
+        sct.Description,
+        sct.Weights,
+        sct.VatAmount,
+        sct.MiscCostGradeLC,
+        (
+            ISNULL(aim.BuyPrice, 0) * ISNULL(aic.OrderedQuantity, 0)
+        ) + ISNULL(sct.AdditionalCost, 0) + ISNULL(sct.MiscCostGradeLC, 0) AS 'SubTotal',
+        (
+            ISNULL(aim.BuyPrice, 0) * ISNULL(aic.OrderedQuantity, 0)
+        ) + ISNULL(sct.AdditionalCost, 0) + ISNULL(sct.MiscCostGradeLC, 0) + ISNULL(sct.VatAmount, 0) AS 'TotalAmount',
+        aic.AmountPaid,
+        aic.OrderedQuantity
+    FROM
+        AppProformaSellers aic
+        JOIN (
+            SELECT
+                id,
+                Description,
+                SellerId
+            FROM
+                AppInquiryFuelDetails
+            WHERE
+                IsDeleted = 0
+                AND IsLosted = 0
+        ) aifd ON aifd.Id = aic.InquiryFuelDetailId
+        JOIN MISubProformaTable sct ON sct.Id = aic.Id
+        LEFT JOIN AppInquiryOffers aio ON aio.InquiryDetailId = aic.InquiryDetailId
+        and aio.SellerId = aifd.SellerId
+        and aio.isdeleted = 0
+        LEFT JOIN AppInquiryMargins aim ON aim.InquiryDetailId = aic.InquiryDetailId
+        and aim.InquirySellerDetailId = aic.InquirySellerDetailId
+        and aim.isdeleted = 0
+),
+WeightsSubTotalPS AS (
+    SELECT
+        Id,
+        InquiryDetailId,
+        InquiryFuelDetailId,
+        MergeCode,
+        CASE
+            WHEN SubTotal = 0 THEN 0
+            ELSE SubTotal / SUM(SubTotal) OVER (PARTITION BY InquiryDetailId, MergeCode)
+        END AS Weights
+    FROM
+        ProformaSellerTable
+),
+ProformaSellersTest AS (
+    SELECT
+        it.Id,
+        it.InquiryDetailId,
+        it.InquiryFuelDetailId,
+        it.InvoiceNumber,
+        it.CurrencyId,
+        it.ExchangeRate,
+        it.BuyPrice,
+        it.Description,
+        it.MergeCode,
+        it.OrderedQuantity,
+        wc.Weights,
+        it.SubTotal,
+        it.VatAmount,
+        it.AdditionalCost,
+        it.TotalAmount,
+        CASE
+            WHEN (
+                (AmountPaid) != 0
+                AND (AmountPaid) IS NOT NULL
+            ) THEN (AmountPaid)
+            ELSE LAG((AmountPaid)) OVER (
+                PARTITION BY it.InquiryDetailId,
+                it.MergeCode
+                ORDER BY
+                    Description
+            )
+        END AS 'AmountReceivedSoFars'
+    FROM
+        ProformaSellerTable it
+        LEFT JOIN WeightsSubTotalPS wc ON wc.Id = it.Id
+),
+ProformaSellerTables AS (
+    SELECT
+        Id,
+        InquiryDetailId,
+        InquiryFuelDetailId,
+        InvoiceNumber,
+        CurrencyId,
+        ExchangeRate,
+        BuyPrice,
+        Description,
+        MergeCode,
+        OrderedQuantity,
+        SubTotal,
+        VatAmount,
+        AdditionalCost,
+        TotalAmount,
+        CASE
+            WHEN TotalAmount = 0 THEN 0
+            ELSE (
+                AmountReceivedSoFars - (
+                    AmountReceivedSoFars * (
+                        (
+                            SUM(TotalAmount) OVER (PARTITION BY InquiryDetailId, MergeCode) - SUM(SubTotal) OVER (PARTITION BY InquiryDetailId, MergeCode)
+                        ) / SUM(TotalAmount) OVER (PARTITION BY InquiryDetailId, MergeCode)
+                    )
+                )
+            ) * Weights
+        END AS 'AmountPaidSoFar'
+    FROM
+        ProformaSellersTest
+),
+SubSellerProformaTable AS (
+    SELECT
+        aic.Id,
+        aic.InquiryDetailId,
+        aic.InquiryFuelDetailId,
+        aic.InvoiceNumber,
+        aio.CurrencyId,
+        aio.ExchangeRate,
+        aim.BuyPrice,
+        aifd.Description,
+        aic.MergeCode,
+        aic.OrderedQuantity,
+        aic.SubTotal,
+        aic.VatAmount,
+        aic.AdditionalCost,
+        aic.TotalAmount,
+        CASE
+            WHEN aic.TotalAmount = 0 THEN 0
+            ELSE aic.AmountPaid - (
+                aic.AmountPaid * (
+                    (aic.TotalAmount - aic.SubTotal) / aic.TotalAmount
+                )
+            )
+        END AS AmountPaidSoFarWO
+    FROM
+        AppProformaSellers aic
+        JOIN (
+            SELECT
+                id,
+                Description,
+                SellerId
+            FROM
+                AppInquiryFuelDetails
+            WHERE
+                IsDeleted = 0
+                AND IsLosted = 0
+        ) aifd ON aifd.Id = aic.InquiryFuelDetailId
+        LEFT JOIN (
+            SELECT
+                ProformaSellerId,
+                SUM(Amount) AS Amount,
+                SUM(AmountUsd) AS AmountUsd
+            FROM
+                AppProformaMiscCosts
+            WHERE
+                IsDeleted = 0
+            GROUP BY
+                ProformaSellerId
+        ) aimc ON aimc.ProformaSellerId = aic.Id
+        LEFT JOIN AppInquiryOffers aio ON aio.InquiryDetailId = aic.InquiryDetailId
+        and aio.SellerId = aifd.SellerId
+        and aio.isdeleted = 0
+        LEFT JOIN AppInquiryMargins aim ON aim.InquiryDetailId = aic.InquiryDetailId
+        and aim.InquirySellerDetailId = aic.InquirySellerDetailId
+        and aim.isdeleted = 0
+    WHERE
+        aic.IsDeleted = 0
+        AND MergeCode IS NULL
+),
+ProformaSellerTableNew AS (
+    SELECT
+        *
+    FROM
+        ProformaSellerTables
+    UNION
+    ALL
+    SELECT
+        *
+    FROM
+        SubSellerProformaTable
+),
+MISubInvoiceTable AS (
     SELECT
         aic.Id,
         aic.InquiryDetailId,
@@ -196,36 +486,45 @@ InvoiceSellersTest AS (
 ),
 InvoiceSellerTables AS (
     SELECT
-        Id,
-        InquiryDetailId,
-        InquiryFuelDetailId,
-        InvoiceNumber,
-        CurrencyId,
-        ExchangeRate,
-        PayableType,
-        BuyPrice,
-        Description,
-        MergeCode,
-        BdnBillingQuantity,
-        SubTotal,
-        VatAmount,
-        Discount,
-        AdditionalCost,
-        TotalAmount,
+        ast.Id,
+        ast.InquiryDetailId,
+        ast.InquiryFuelDetailId,
+        ast.InvoiceNumber,
+        ast.CurrencyId,
+        ast.ExchangeRate,
+        ast.PayableType,
+        ast.BuyPrice,
+        ast.Description,
+        ast.MergeCode,
+        ast.BdnBillingQuantity,
+        ast.SubTotal,
+        ast.VatAmount,
+        ast.Discount,
+        ast.AdditionalCost,
+        ast.TotalAmount,
         CASE
-            WHEN TotalAmount = 0 THEN 0
-            ELSE (
-                AmountReceivedSoFars - (
-                    AmountReceivedSoFars * (
-                        (
-                            SUM(TotalAmount) OVER (PARTITION BY InquiryDetailId, MergeCode) - SUM(SubTotal) OVER (PARTITION BY InquiryDetailId, MergeCode)
-                        ) / SUM(TotalAmount) OVER (PARTITION BY InquiryDetailId, MergeCode)
-                    )
-                )
-            ) * Weights
+            WHEN ast.TotalAmount = 0 THEN 0
+            ELSE ISNULL(
+                (
+                    (
+                        ast.AmountReceivedSoFars - (
+                            ast.AmountReceivedSoFars * (
+                                (
+                                    SUM(ast.TotalAmount) OVER (PARTITION BY ast.InquiryDetailId, ast.MergeCode) - SUM(ast.SubTotal) OVER (PARTITION BY ast.InquiryDetailId, ast.MergeCode)
+                                ) / SUM(ast.TotalAmount) OVER (PARTITION BY ast.InquiryDetailId, ast.MergeCode)
+                            )
+                        )
+                    ) * Weights
+                ),
+                0
+            ) + ISNULL(
+                SUM(pst.AmountPaidSoFar) OVER (PARTITION BY ast.InquiryDetailId, ast.MergeCode) * Weights,
+                0
+            )
         END AS 'AmountPaidSoFar'
     FROM
-        InvoiceSellersTest
+        InvoiceSellersTest ast
+        LEFT JOIN ProformaSellerTableNew pst ON pst.Inquirydetailid = ast.InquiryFuelDetailId
 ),
 SubSellerTable AS (
     SELECT
@@ -247,11 +546,14 @@ SubSellerTable AS (
         aic.TotalAmount,
         CASE
             WHEN aic.TotalAmount = 0 THEN 0
-            ELSE aic.AmountPaidSoFar - (
-                aic.AmountPaidSoFar * (
-                    (aic.TotalAmount - aic.SubTotal) / aic.TotalAmount
-                )
-            )
+            ELSE ISNULL(
+                aic.AmountPaidSoFar - (
+                    aic.AmountPaidSoFar * (
+                        (aic.TotalAmount - aic.SubTotal) / aic.TotalAmount
+                    )
+                ),
+                0
+            ) + ISNULL(pst.AmountPaidSoFar, 0)
         END AS AmountPaidSoFarWO
     FROM
         AppInvoiceSellers aic
@@ -277,10 +579,11 @@ SubSellerTable AS (
             GROUP BY
                 InvoiceSellerId
         ) aimc ON aimc.InvoiceSellerId = aic.Id
+        LEFT JOIN ProformaSellerTableNew pst ON pst.Inquirydetailid = aic.InquiryFuelDetailId
     WHERE
         IsDeleted = 0
         AND InvoiceType = 0
-        AND MergeCode IS NULL
+        AND aic.MergeCode IS NULL
 ),
 InvoiceSellerTableNew AS (
     SELECT
@@ -293,6 +596,317 @@ InvoiceSellerTableNew AS (
         *
     FROM
         SubSellerTable
+),
+MISubProformaCusTable AS (
+    SELECT
+        aic.Id,
+        aic.InquiryDetailId,
+        aic.InquiryFuelDetailId,
+        aic.InquirySellerDetailId,
+        aifd.Description,
+        aic.MergeCode,
+        aic.OrderedQuantity,
+        aic.SubTotal,
+        aic.ProformaCode,
+        aim.CurrencyId,
+        aim.SellPrice,
+        (aimc.AmountUsd / aim.ExchangeRate) AS 'MiscCostGradeLC',
+        CASE
+            WHEN (
+                (aic.AdditionalCost / aim.ExchangeRate) != 0
+                AND (aic.AdditionalCost / aim.ExchangeRate) IS NOT NULL
+            ) THEN (aic.AdditionalCost / aim.ExchangeRate) * (
+                aic.OrderedQuantity * 1.0 / NULLIF(
+                    SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode),
+                    0
+                )
+            )
+            ELSE LAG((aic.AdditionalCost / aim.ExchangeRate)) OVER (
+                PARTITION BY aic.InquiryDetailId,
+                aic.MergeCode
+                ORDER BY
+                    aifd.Description
+            ) * (
+                aic.OrderedQuantity * 1.0 / NULLIF(
+                    SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode),
+                    0
+                )
+            )
+        END AS 'AdditionalCost',
+        CASE
+            WHEN (
+                (aic.AdditionalCost) != 0
+                AND (aic.AdditionalCost) IS NOT NULL
+            ) THEN (aic.AdditionalCost) * (
+                aic.OrderedQuantity * 1.0 / NULLIF(
+                    SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode),
+                    0
+                )
+            )
+            ELSE LAG((aic.AdditionalCost)) OVER (
+                PARTITION BY aic.InquiryDetailId,
+                aic.MergeCode
+                ORDER BY
+                    aifd.Description
+            ) * (
+                aic.OrderedQuantity * 1.0 / NULLIF(
+                    SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode),
+                    0
+                )
+            )
+        END AS 'AdditionalCostUSD',
+        CASE
+            WHEN (
+                (aic.VatAmount) != 0
+                AND (aic.VatAmount) IS NOT NULL
+            ) THEN (aic.VatAmount) * (
+                aic.OrderedQuantity * 1.0 / NULLIF(
+                    SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode),
+                    0
+                )
+            )
+            ELSE LAG((aic.VatAmount)) OVER (
+                PARTITION BY aic.InquiryDetailId,
+                aic.MergeCode
+                ORDER BY
+                    aifd.Description
+            ) * (
+                aic.OrderedQuantity * 1.0 / NULLIF(
+                    SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode),
+                    0
+                )
+            )
+        END AS 'VatAmount',
+        aic.OrderedQuantity * 1.0 / NULLIF(
+            SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode),
+            0
+        ) AS 'Weights'
+    FROM
+        AppProformaCustomers aic
+        JOIN (
+            SELECT
+                id,
+                Description,
+                SellerId
+            FROM
+                AppInquiryFuelDetails
+            WHERE
+                IsDeleted = 0
+                AND IsLosted = 0
+        ) aifd ON aifd.Id = aic.InquiryFuelDetailId
+        LEFT JOIN (
+            SELECT
+                ProformaCustomerId,
+                SUM(Amount) AS Amount,
+                SUM(AmountUsd) AS AmountUsd
+            FROM
+                AppProformaMiscCosts
+            WHERE
+                IsDeleted = 0
+            GROUP BY
+                ProformaCustomerId
+        ) aimc ON aimc.ProformaCustomerId = aic.Id
+        LEFT JOIN AppInquiryOffers aio ON aio.InquiryDetailId = aic.InquiryDetailId
+        and aio.SellerId = aifd.SellerId
+        and aio.isdeleted = 0
+        LEFT JOIN AppInquiryMargins aim ON aim.InquiryDetailId = aic.InquiryDetailId
+        and aim.InquirySellerDetailId = aic.InquirySellerDetailId
+        and aim.isdeleted = 0
+    WHERE
+        aic.IsDeleted = 0
+        AND MergeCode IS NOT NULL
+),
+ProformaCustomerTable AS (
+    SELECT
+        aic.Id,
+        aic.InquiryDetailId,
+        aic.MergeCode,
+        aic.InquiryFuelDetailId,
+        aic.ProformaCode,
+        aim.CurrencyId,
+        aim.ExchangeRate,
+        aim.SellPrice,
+        sct.AdditionalCost,
+        sct.Description,
+        sct.Weights,
+        sct.VatAmount,
+        sct.MiscCostGradeLC,
+        (
+            ISNULL(aim.SellPrice, 0) * ISNULL(aic.OrderedQuantity, 0)
+        ) + ISNULL(sct.AdditionalCost, 0) + ISNULL(sct.MiscCostGradeLC, 0) AS 'SubTotal',
+        (
+            ISNULL(aim.SellPrice, 0) * ISNULL(aic.OrderedQuantity, 0)
+        ) + ISNULL(sct.AdditionalCost, 0) + ISNULL(sct.MiscCostGradeLC, 0) + ISNULL(sct.VatAmount, 0) AS 'TotalAmount',
+        aic.AmountReceived,
+        aic.OrderedQuantity
+    FROM
+        AppProformaCustomers aic
+        JOIN (
+            SELECT
+                id,
+                Description,
+                SellerId
+            FROM
+                AppInquiryFuelDetails
+            WHERE
+                IsDeleted = 0
+                AND IsLosted = 0
+        ) aifd ON aifd.Id = aic.InquiryFuelDetailId
+        JOIN MISubProformaCusTable sct ON sct.Id = aic.Id
+        LEFT JOIN AppInquiryOffers aio ON aio.InquiryDetailId = aic.InquiryDetailId
+        and aio.SellerId = aifd.SellerId
+        and aio.isdeleted = 0
+        LEFT JOIN AppInquiryMargins aim ON aim.InquiryDetailId = aic.InquiryDetailId
+        and aim.InquirySellerDetailId = aic.InquirySellerDetailId
+        and aim.isdeleted = 0
+),
+WeightsSubTotalPC AS (
+    SELECT
+        Id,
+        InquiryDetailId,
+        InquiryFuelDetailId,
+        MergeCode,
+        CASE
+            WHEN SubTotal = 0 THEN 0
+            ELSE SubTotal / SUM(SubTotal) OVER (PARTITION BY InquiryDetailId, MergeCode)
+        END AS Weights
+    FROM
+        ProformaCustomerTable
+),
+ProformaCustomersTest AS (
+    SELECT
+        it.Id,
+        it.InquiryDetailId,
+        it.InquiryFuelDetailId,
+        it.ProformaCode,
+        it.CurrencyId,
+        it.ExchangeRate,
+        it.SellPrice,
+        it.Description,
+        it.MergeCode,
+        it.OrderedQuantity,
+        wc.Weights,
+        it.SubTotal,
+        it.VatAmount,
+        it.AdditionalCost,
+        it.TotalAmount,
+        CASE
+            WHEN (
+                (AmountReceived) != 0
+                AND (AmountReceived) IS NOT NULL
+            ) THEN (AmountReceived)
+            ELSE LAG((AmountReceived)) OVER (
+                PARTITION BY it.InquiryDetailId,
+                it.MergeCode
+                ORDER BY
+                    Description
+            )
+        END AS 'AmountReceivedSoFars'
+    FROM
+        ProformaCustomerTable it
+        LEFT JOIN WeightsSubTotalPC wc ON wc.Id = it.Id
+),
+ProformaCustomerTables AS (
+    SELECT
+        Id,
+        InquiryDetailId,
+        InquiryFuelDetailId,
+        ProformaCode,
+        CurrencyId,
+        ExchangeRate,
+        SellPrice,
+        Description,
+        MergeCode,
+        OrderedQuantity,
+        SubTotal,
+        VatAmount,
+        AdditionalCost,
+        TotalAmount,
+        CASE
+            WHEN TotalAmount = 0 THEN 0
+            ELSE (
+                AmountReceivedSoFars - (
+                    AmountReceivedSoFars * (
+                        (
+                            SUM(TotalAmount) OVER (PARTITION BY InquiryDetailId, MergeCode) - SUM(SubTotal) OVER (PARTITION BY InquiryDetailId, MergeCode)
+                        ) / SUM(TotalAmount) OVER (PARTITION BY InquiryDetailId, MergeCode)
+                    )
+                )
+            ) * Weights
+        END AS 'AmountReceivedSoFar'
+    FROM
+        ProformaCustomersTest
+),
+SubCustomerProformaTable AS (
+    SELECT
+        aic.Id,
+        aic.InquiryDetailId,
+        aic.InquiryFuelDetailId,
+        aic.ProformaCode,
+        aim.CurrencyId,
+        aim.ExchangeRate,
+        aim.SellPrice,
+        aifd.Description,
+        aic.MergeCode,
+        aic.OrderedQuantity,
+        aic.SubTotal,
+        aic.VatAmount,
+        aic.AdditionalCost,
+        aic.TotalAmount,
+        CASE
+            WHEN aic.TotalAmount = 0 THEN 0
+            ELSE aic.AmountReceived - (
+                aic.AmountReceived * (
+                    (aic.TotalAmount - aic.SubTotal) / aic.TotalAmount
+                )
+            )
+        END AS AmountPaidSoFarWO
+    FROM
+        AppProformaCustomers aic
+        JOIN (
+            SELECT
+                id,
+                Description,
+                SellerId
+            FROM
+                AppInquiryFuelDetails
+            WHERE
+                IsDeleted = 0
+                AND IsLosted = 0
+        ) aifd ON aifd.Id = aic.InquiryFuelDetailId
+        LEFT JOIN (
+            SELECT
+                ProformaCustomerId,
+                SUM(Amount) AS Amount,
+                SUM(AmountUsd) AS AmountUsd
+            FROM
+                AppProformaMiscCosts
+            WHERE
+                IsDeleted = 0
+            GROUP BY
+                ProformaCustomerId
+        ) aimc ON aimc.ProformaCustomerId = aic.Id
+        LEFT JOIN AppInquiryOffers aio ON aio.InquiryDetailId = aic.InquiryDetailId
+        and aio.SellerId = aifd.SellerId
+        and aio.isdeleted = 0
+        LEFT JOIN AppInquiryMargins aim ON aim.InquiryDetailId = aic.InquiryDetailId
+        and aim.InquirySellerDetailId = aic.InquirySellerDetailId
+        and aim.isdeleted = 0
+    WHERE
+        aic.IsDeleted = 0
+        AND MergeCode IS NULL
+),
+ProformaCustomerTableNew AS (
+    SELECT
+        *
+    FROM
+        ProformaCustomerTables
+    UNION
+    ALL
+    SELECT
+        *
+    FROM
+        SubCustomerProformaTable
 ),
 MICSubInvoiceTable AS (
     SELECT
@@ -492,40 +1106,49 @@ InvoiceCustomersTest AS (
 ),
 InvoiceCustomerTables AS (
     SELECT
-        Id,
-        InquiryDetailId,
-        InquiryFuelDetailId,
-        InvoiceCode,
-        CurrencyId,
-        ReceivableType,
-        PaymentDueDate,
-        AmountReceivedDate,
-        ApprovedOn,
-        AcknowledgementSentOn,
-        SellPrice,
-        ExchangeRate,
-        Description,
-        MergeCode,
-        BdnBillingQuantity,
-        SubTotal,
-        VatAmount,
-        Discount,
-        AdditionalCost,
-        TotalAmount,
+        ict.Id,
+        ict.InquiryDetailId,
+        ict.InquiryFuelDetailId,
+        ict.InvoiceCode,
+        ict.CurrencyId,
+        ict.ReceivableType,
+        ict.PaymentDueDate,
+        ict.AmountReceivedDate,
+        ict.ApprovedOn,
+        ict.AcknowledgementSentOn,
+        ict.SellPrice,
+        ict.ExchangeRate,
+        ict.Description,
+        ict.MergeCode,
+        ict.BdnBillingQuantity,
+        ict.SubTotal,
+        ict.VatAmount,
+        ict.Discount,
+        ict.AdditionalCost,
+        ict.TotalAmount,
         CASE
-            WHEN TotalAmount = 0 THEN 0
-            ELSE (
-                AmountReceivedSoFars - (
-                    AmountReceivedSoFars * (
-                        (
-                            SUM(TotalAmount) OVER (PARTITION BY InquiryDetailId, MergeCode) - SUM(SubTotal) OVER (PARTITION BY InquiryDetailId, MergeCode)
-                        ) / SUM(TotalAmount) OVER (PARTITION BY InquiryDetailId, MergeCode)
-                    )
-                )
-            ) * Weights
+            WHEN ict.TotalAmount = 0 THEN 0
+            ELSE ISNULL(
+                (
+                    (
+                        ict.AmountReceivedSoFars - (
+                            ict.AmountReceivedSoFars * (
+                                (
+                                    SUM(ict.TotalAmount) OVER (PARTITION BY ict.InquiryDetailId, ict.MergeCode) - SUM(ict.SubTotal) OVER (PARTITION BY ict.InquiryDetailId, ict.MergeCode)
+                                ) / SUM(ict.TotalAmount) OVER (PARTITION BY ict.InquiryDetailId, ict.MergeCode)
+                            )
+                        )
+                    ) * Weights
+                ),
+                0
+            ) + ISNULL(
+                SUM(pst.AmountReceivedSoFar) OVER (PARTITION BY ict.InquiryDetailId, ict.MergeCode) * Weights,
+                0
+            )
         END AS 'AmountRecievedSoFar'
     FROM
-        InvoiceCustomersTest
+        InvoiceCustomersTest ict
+        LEFT JOIN ProformaCustomerTableNew pst ON pst.InquiryFuelDetailId = ict.InquiryFuelDetailId
 ),
 SubCustomerTable AS (
     SELECT
@@ -551,11 +1174,14 @@ SubCustomerTable AS (
         aic.TotalAmount,
         CASE
             WHEN aic.TotalAmount = 0 THEN 0
-            ELSE aic.AmountReceivedSoFar - (
-                aic.AmountReceivedSoFar * (
-                    (aic.TotalAmount - aic.SubTotal) / aic.TotalAmount
-                )
-            )
+            ELSE ISNULL(
+                aic.AmountReceivedSoFar - (
+                    aic.AmountReceivedSoFar * (
+                        (aic.TotalAmount - aic.SubTotal) / aic.TotalAmount
+                    )
+                ),
+                0
+            ) + ISNULL(pst.AmountReceivedSoFar, 0)
         END AS AmountReceivedSoFarWO
     FROM
         AppInvoiceCustomers aic
@@ -581,10 +1207,11 @@ SubCustomerTable AS (
             GROUP BY
                 InvoiceCustomerId
         ) aimc ON aimc.InvoiceCustomerId = aic.Id
+        LEFT JOIN ProformaCustomerTableNew pst ON pst.Inquirydetailid = aic.InquiryFuelDetailId
     WHERE
         IsDeleted = 0
         AND InvoiceType = 0
-        AND MergeCode IS NULL
+        AND aic.MergeCode IS NULL
 ),
 InvoiceCustomerTableNew AS (
     SELECT
@@ -1980,16 +2607,16 @@ ExampleCTE AS (
         ROUND(SUM([Amount Paid]), 2) AS 'Amount Paid',
         CASE
             WHEN (
-                SUM([Amount Received]) = SUM([Customer Invoice Amount])
-                OR SUM([Amount Received]) > SUM([Customer Invoice Amount])
+                ROUND(SUM([Amount Received]), 2) = ROUND(SUM([Customer Invoice Amount]), 2)
+                OR ROUND(SUM([Amount Received]), 2) > ROUND(SUM([Customer Invoice Amount]), 2)
             ) THEN 'Received'
             WHEN SUM([Amount Received]) > 0 THEN 'Partly Received'
             ELSE 'Not Received'
         END AS 'Receipt Status',
         CASE
             WHEN (
-                SUM([Amount Paid]) = SUM([Seller Invoice Amount])
-                OR SUM([Amount Paid]) > SUM([Seller Invoice Amount])
+                ROUND(SUM([Amount Paid]), 2) = ROUND(SUM([Seller Invoice Amount]), 2)
+                OR ROUND(SUM([Amount Paid]), 2) > ROUND(SUM([Seller Invoice Amount]), 2)
             ) THEN 'Paid'
             WHEN SUM([Amount Paid]) > 0 THEN 'Partly Paid'
             ELSE 'Not Paid'
@@ -2073,3 +2700,4 @@ where
         'Delivered',
         'Cancelled Stem'
     )
+    --and [Job Code] = 'G7447'
