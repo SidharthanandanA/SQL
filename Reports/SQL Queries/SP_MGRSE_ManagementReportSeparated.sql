@@ -6,6 +6,7 @@
 -- Description: Management Report Separated
 -- Change Log:
 -- 1.0 - Initial creation (2025-06-07)
+-- 1.1 - Proforma amounts added to Amount Received (2025-06-09)
 -- ===================================================
 
 WITH MISubProformaTable AS (
