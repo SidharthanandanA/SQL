@@ -7,7 +7,9 @@
 -- Change Log:
 -- 1.0 - Initial creation (2025-06-07)
 -- 1.1 - Proforma amounts added to Amount Received (2025-06-09)
+-- 1.2 - Logic Updated to work for 3 fuel scenarios (2025-06-11)
 -- ===================================================
+
 WITH MISubProformaTable AS (
     SELECT
         aic.Id,
@@ -23,49 +25,67 @@ WITH MISubProformaTable AS (
         aim.BuyPrice,
         (aimc.AmountUsd / aio.ExchangeRate) AS 'MiscCostGradeLC',
         CASE
-            WHEN (
-                (aic.AdditionalCost / aio.ExchangeRate) != 0
-                AND (aic.AdditionalCost / aio.ExchangeRate) IS NOT NULL
-            ) THEN (aic.AdditionalCost / aio.ExchangeRate) * (
+            WHEN (aic.AdditionalCost / aio.ExchangeRate) != 0
+            AND (aic.AdditionalCost / aio.ExchangeRate) IS NOT NULL THEN (aic.AdditionalCost / aio.ExchangeRate) * (
                 aic.OrderedQuantity * 1.0 / SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
             )
-            ELSE LAG((aic.AdditionalCost / aio.ExchangeRate)) OVER (
-                PARTITION BY aic.InquiryDetailId,
-                aic.MergeCode
-                ORDER BY
-                    aifd.Description
+            ELSE (
+                MAX(
+                    CASE
+                        WHEN (aic.AdditionalCost / aio.ExchangeRate) IS NOT NULL THEN (aic.AdditionalCost / aio.ExchangeRate)
+                        ELSE NULL
+                    END
+                ) OVER (
+                    PARTITION BY aic.InquiryDetailId,
+                    aic.MergeCode
+                    ORDER BY
+                        aifd.Description ROWS BETWEEN UNBOUNDED PRECEDING
+                        AND CURRENT ROW
+                )
             ) * (
                 aic.OrderedQuantity * 1.0 / SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
             )
         END AS 'AdditionalCost',
         CASE
-            WHEN (
-                (aic.AdditionalCost) != 0
-                AND (aic.AdditionalCost) IS NOT NULL
-            ) THEN (aic.AdditionalCost) * (
+            WHEN aic.AdditionalCost != 0
+            AND aic.AdditionalCost IS NOT NULL THEN aic.AdditionalCost * (
                 aic.OrderedQuantity * 1.0 / SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
             )
-            ELSE LAG((aic.AdditionalCost)) OVER (
-                PARTITION BY aic.InquiryDetailId,
-                aic.MergeCode
-                ORDER BY
-                    aifd.Description
+            ELSE (
+                MAX(
+                    CASE
+                        WHEN aic.AdditionalCost IS NOT NULL THEN aic.AdditionalCost
+                        ELSE NULL
+                    END
+                ) OVER (
+                    PARTITION BY aic.InquiryDetailId,
+                    aic.MergeCode
+                    ORDER BY
+                        aifd.Description ROWS BETWEEN UNBOUNDED PRECEDING
+                        AND CURRENT ROW
+                )
             ) * (
                 aic.OrderedQuantity * 1.0 / SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
             )
         END AS 'AdditionalCostUSD',
         CASE
-            WHEN (
-                (aic.VatAmount) != 0
-                AND (aic.VatAmount) IS NOT NULL
-            ) THEN (aic.VatAmount) * (
+            WHEN aic.VatAmount != 0
+            AND aic.VatAmount IS NOT NULL THEN aic.VatAmount * (
                 aic.OrderedQuantity * 1.0 / SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
             )
-            ELSE LAG((aic.VatAmount)) OVER (
-                PARTITION BY aic.InquiryDetailId,
-                aic.MergeCode
-                ORDER BY
-                    aifd.Description
+            ELSE (
+                MAX(
+                    CASE
+                        WHEN aic.VatAmount IS NOT NULL THEN aic.VatAmount
+                        ELSE NULL
+                    END
+                ) OVER (
+                    PARTITION BY aic.InquiryDetailId,
+                    aic.MergeCode
+                    ORDER BY
+                        aifd.Description ROWS BETWEEN UNBOUNDED PRECEDING
+                        AND CURRENT ROW
+                )
             ) * (
                 aic.OrderedQuantity * 1.0 / SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
             )
@@ -181,15 +201,21 @@ ProformaSellersTest AS (
         it.AdditionalCost,
         it.TotalAmount,
         CASE
-            WHEN (
-                (AmountPaid) != 0
-                AND (AmountPaid) IS NOT NULL
-            ) THEN (AmountPaid)
-            ELSE LAG((AmountPaid)) OVER (
-                PARTITION BY it.InquiryDetailId,
-                it.MergeCode
-                ORDER BY
-                    Description
+            WHEN AmountPaid != 0
+            AND AmountPaid IS NOT NULL THEN AmountPaid
+            ELSE (
+                MAX(
+                    CASE
+                        WHEN AmountPaid IS NOT NULL THEN AmountPaid
+                        ELSE NULL
+                    END
+                ) OVER (
+                    PARTITION BY it.InquiryDetailId,
+                    it.MergeCode
+                    ORDER BY
+                        Description ROWS BETWEEN UNBOUNDED PRECEDING
+                        AND CURRENT ROW
+                )
             )
         END AS 'AmountReceivedSoFars'
     FROM
@@ -314,65 +340,89 @@ MISubInvoiceTable AS (
         aic.BuyPrice,
         (aimc.AmountUsd / aic.ExchangeRate) AS 'MiscCostGradeLC',
         CASE
-            WHEN (
-                (aic.AdditionalCost / aic.ExchangeRate) != 0
-                AND (aic.AdditionalCost / aic.ExchangeRate) IS NOT NULL
-            ) THEN (aic.AdditionalCost / aic.ExchangeRate) * (
+            WHEN (aic.AdditionalCost / aic.ExchangeRate) != 0
+            AND (aic.AdditionalCost / aic.ExchangeRate) IS NOT NULL THEN (aic.AdditionalCost / aic.ExchangeRate) * (
                 aic.BdnBillingQuantity * 1.0 / SUM(aic.BdnBillingQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
             )
-            ELSE LAG((aic.AdditionalCost / aic.ExchangeRate)) OVER (
-                PARTITION BY aic.InquiryDetailId,
-                aic.MergeCode
-                ORDER BY
-                    aifd.Description
+            ELSE (
+                MAX(
+                    CASE
+                        WHEN (aic.AdditionalCost / aic.ExchangeRate) IS NOT NULL THEN (aic.AdditionalCost / aic.ExchangeRate)
+                        ELSE NULL
+                    END
+                ) OVER (
+                    PARTITION BY aic.InquiryDetailId,
+                    aic.MergeCode
+                    ORDER BY
+                        aifd.Description ROWS BETWEEN UNBOUNDED PRECEDING
+                        AND CURRENT ROW
+                )
             ) * (
                 aic.BdnBillingQuantity * 1.0 / SUM(aic.BdnBillingQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
             )
         END AS 'AdditionalCost',
         CASE
-            WHEN (
-                (aic.AdditionalCost) != 0
-                AND (aic.AdditionalCost) IS NOT NULL
-            ) THEN (aic.AdditionalCost) * (
+            WHEN aic.AdditionalCost != 0
+            AND aic.AdditionalCost IS NOT NULL THEN aic.AdditionalCost * (
                 aic.BdnBillingQuantity * 1.0 / SUM(aic.BdnBillingQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
             )
-            ELSE LAG((aic.AdditionalCost)) OVER (
-                PARTITION BY aic.InquiryDetailId,
-                aic.MergeCode
-                ORDER BY
-                    aifd.Description
+            ELSE (
+                MAX(
+                    CASE
+                        WHEN aic.AdditionalCost IS NOT NULL THEN aic.AdditionalCost
+                        ELSE NULL
+                    END
+                ) OVER (
+                    PARTITION BY aic.InquiryDetailId,
+                    aic.MergeCode
+                    ORDER BY
+                        aifd.Description ROWS BETWEEN UNBOUNDED PRECEDING
+                        AND CURRENT ROW
+                )
             ) * (
                 aic.BdnBillingQuantity * 1.0 / SUM(aic.BdnBillingQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
             )
         END AS 'AdditionalCostUSD',
         CASE
-            WHEN (
-                (aic.Discount) != 0
-                AND (aic.Discount) IS NOT NULL
-            ) THEN (aic.Discount) * (
+            WHEN aic.Discount != 0
+            AND aic.Discount IS NOT NULL THEN aic.Discount * (
                 aic.BdnBillingQuantity * 1.0 / SUM(aic.BdnBillingQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
             )
-            ELSE LAG((aic.Discount)) OVER (
-                PARTITION BY aic.InquiryDetailId,
-                aic.MergeCode
-                ORDER BY
-                    aifd.Description
+            ELSE (
+                MAX(
+                    CASE
+                        WHEN aic.Discount IS NOT NULL THEN aic.Discount
+                        ELSE NULL
+                    END
+                ) OVER (
+                    PARTITION BY aic.InquiryDetailId,
+                    aic.MergeCode
+                    ORDER BY
+                        aifd.Description ROWS BETWEEN UNBOUNDED PRECEDING
+                        AND CURRENT ROW
+                )
             ) * (
                 aic.BdnBillingQuantity * 1.0 / SUM(aic.BdnBillingQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
             )
         END AS 'Discount',
         CASE
-            WHEN (
-                (aic.VatAmount) != 0
-                AND (aic.VatAmount) IS NOT NULL
-            ) THEN (aic.VatAmount) * (
+            WHEN aic.VatAmount != 0
+            AND aic.VatAmount IS NOT NULL THEN aic.VatAmount * (
                 aic.BdnBillingQuantity * 1.0 / SUM(aic.BdnBillingQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
             )
-            ELSE LAG((aic.VatAmount)) OVER (
-                PARTITION BY aic.InquiryDetailId,
-                aic.MergeCode
-                ORDER BY
-                    aifd.Description
+            ELSE (
+                MAX(
+                    CASE
+                        WHEN aic.VatAmount IS NOT NULL THEN aic.VatAmount
+                        ELSE NULL
+                    END
+                ) OVER (
+                    PARTITION BY aic.InquiryDetailId,
+                    aic.MergeCode
+                    ORDER BY
+                        aifd.Description ROWS BETWEEN UNBOUNDED PRECEDING
+                        AND CURRENT ROW
+                )
             ) * (
                 aic.BdnBillingQuantity * 1.0 / SUM(aic.BdnBillingQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
             )
@@ -469,15 +519,21 @@ InvoiceSellersTest AS (
         it.AdditionalCost,
         it.TotalAmount,
         CASE
-            WHEN (
-                (AmountPaidSoFar) != 0
-                AND (AmountPaidSoFar) IS NOT NULL
-            ) THEN (AmountPaidSoFar)
-            ELSE LAG((AmountPaidSoFar)) OVER (
-                PARTITION BY it.InquiryDetailId,
-                it.MergeCode
-                ORDER BY
-                    Description
+            WHEN AmountPaidSoFar != 0
+            AND AmountPaidSoFar IS NOT NULL THEN AmountPaidSoFar
+            ELSE (
+                MAX(
+                    CASE
+                        WHEN AmountPaidSoFar IS NOT NULL THEN AmountPaidSoFar
+                        ELSE NULL
+                    END
+                ) OVER (
+                    PARTITION BY it.InquiryDetailId,
+                    it.MergeCode
+                    ORDER BY
+                        Description ROWS BETWEEN UNBOUNDED PRECEDING
+                        AND CURRENT ROW
+                )
             )
         END AS 'AmountReceivedSoFars'
     FROM
@@ -612,69 +668,69 @@ MISubProformaCusTable AS (
         aim.SellPrice,
         (aimc.AmountUsd / aim.ExchangeRate) AS 'MiscCostGradeLC',
         CASE
-            WHEN (
-                (aic.AdditionalCost / aim.ExchangeRate) != 0
-                AND (aic.AdditionalCost / aim.ExchangeRate) IS NOT NULL
-            ) THEN (aic.AdditionalCost / aim.ExchangeRate) * (
-                aic.OrderedQuantity * 1.0 / NULLIF(
-                    SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode),
-                    0
-                )
+            WHEN (aic.AdditionalCost / aim.ExchangeRate) != 0
+            AND (aic.AdditionalCost / aim.ExchangeRate) IS NOT NULL THEN (aic.AdditionalCost / aim.ExchangeRate) * (
+                aic.OrderedQuantity * 1.0 / SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
             )
-            ELSE LAG((aic.AdditionalCost / aim.ExchangeRate)) OVER (
-                PARTITION BY aic.InquiryDetailId,
-                aic.MergeCode
-                ORDER BY
-                    aifd.Description
-            ) * (
-                aic.OrderedQuantity * 1.0 / NULLIF(
-                    SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode),
-                    0
+            ELSE (
+                MAX(
+                    CASE
+                        WHEN (aic.AdditionalCost / aim.ExchangeRate) IS NOT NULL THEN (aic.AdditionalCost / aim.ExchangeRate)
+                        ELSE NULL
+                    END
+                ) OVER (
+                    PARTITION BY aic.InquiryDetailId,
+                    aic.MergeCode
+                    ORDER BY
+                        aifd.Description ROWS BETWEEN UNBOUNDED PRECEDING
+                        AND CURRENT ROW
                 )
+            ) * (
+                aic.OrderedQuantity * 1.0 / SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
             )
         END AS 'AdditionalCost',
         CASE
-            WHEN (
-                (aic.AdditionalCost) != 0
-                AND (aic.AdditionalCost) IS NOT NULL
-            ) THEN (aic.AdditionalCost) * (
-                aic.OrderedQuantity * 1.0 / NULLIF(
-                    SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode),
-                    0
-                )
+            WHEN aic.AdditionalCost != 0
+            AND aic.AdditionalCost IS NOT NULL THEN aic.AdditionalCost * (
+                aic.OrderedQuantity * 1.0 / SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
             )
-            ELSE LAG((aic.AdditionalCost)) OVER (
-                PARTITION BY aic.InquiryDetailId,
-                aic.MergeCode
-                ORDER BY
-                    aifd.Description
-            ) * (
-                aic.OrderedQuantity * 1.0 / NULLIF(
-                    SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode),
-                    0
+            ELSE (
+                MAX(
+                    CASE
+                        WHEN aic.AdditionalCost IS NOT NULL THEN aic.AdditionalCost
+                        ELSE NULL
+                    END
+                ) OVER (
+                    PARTITION BY aic.InquiryDetailId,
+                    aic.MergeCode
+                    ORDER BY
+                        aifd.Description ROWS BETWEEN UNBOUNDED PRECEDING
+                        AND CURRENT ROW
                 )
+            ) * (
+                aic.OrderedQuantity * 1.0 / SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
             )
         END AS 'AdditionalCostUSD',
         CASE
-            WHEN (
-                (aic.VatAmount) != 0
-                AND (aic.VatAmount) IS NOT NULL
-            ) THEN (aic.VatAmount) * (
-                aic.OrderedQuantity * 1.0 / NULLIF(
-                    SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode),
-                    0
-                )
+            WHEN aic.VatAmount != 0
+            AND aic.VatAmount IS NOT NULL THEN aic.VatAmount * (
+                aic.OrderedQuantity * 1.0 / SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
             )
-            ELSE LAG((aic.VatAmount)) OVER (
-                PARTITION BY aic.InquiryDetailId,
-                aic.MergeCode
-                ORDER BY
-                    aifd.Description
-            ) * (
-                aic.OrderedQuantity * 1.0 / NULLIF(
-                    SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode),
-                    0
+            ELSE (
+                MAX(
+                    CASE
+                        WHEN aic.VatAmount IS NOT NULL THEN aic.VatAmount
+                        ELSE NULL
+                    END
+                ) OVER (
+                    PARTITION BY aic.InquiryDetailId,
+                    aic.MergeCode
+                    ORDER BY
+                        aifd.Description ROWS BETWEEN UNBOUNDED PRECEDING
+                        AND CURRENT ROW
                 )
+            ) * (
+                aic.OrderedQuantity * 1.0 / SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
             )
         END AS 'VatAmount',
         aic.OrderedQuantity * 1.0 / NULLIF(
@@ -791,15 +847,21 @@ ProformaCustomersTest AS (
         it.AdditionalCost,
         it.TotalAmount,
         CASE
-            WHEN (
-                (AmountReceived) != 0
-                AND (AmountReceived) IS NOT NULL
-            ) THEN (AmountReceived)
-            ELSE LAG((AmountReceived)) OVER (
-                PARTITION BY it.InquiryDetailId,
-                it.MergeCode
-                ORDER BY
-                    Description
+            WHEN AmountReceived != 0
+            AND AmountReceived IS NOT NULL THEN AmountReceived
+            ELSE (
+                MAX(
+                    CASE
+                        WHEN AmountReceived IS NOT NULL THEN AmountReceived
+                        ELSE NULL
+                    END
+                ) OVER (
+                    PARTITION BY it.InquiryDetailId,
+                    it.MergeCode
+                    ORDER BY
+                        Description ROWS BETWEEN UNBOUNDED PRECEDING
+                        AND CURRENT ROW
+                )
             )
         END AS 'AmountReceivedSoFars'
     FROM
@@ -926,65 +988,89 @@ MICSubInvoiceTable AS (
         aic.SubTotal,
         (aimc.AmountUsd / aic.ExchangeRate) AS 'MiscCostGradeLC',
         CASE
-            WHEN (
-                (aic.AdditionalCost / aic.ExchangeRate) != 0
-                AND (aic.AdditionalCost / aic.ExchangeRate) IS NOT NULL
-            ) THEN (aic.AdditionalCost / aic.ExchangeRate) * (
+            WHEN (aic.AdditionalCost / aic.ExchangeRate) != 0
+            AND (aic.AdditionalCost / aic.ExchangeRate) IS NOT NULL THEN (aic.AdditionalCost / aic.ExchangeRate) * (
                 aic.BdnBillingQuantity * 1.0 / SUM(aic.BdnBillingQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
             )
-            ELSE LAG((aic.AdditionalCost / aic.ExchangeRate)) OVER (
-                PARTITION BY aic.InquiryDetailId,
-                aic.MergeCode
-                ORDER BY
-                    aifd.Description
+            ELSE (
+                MAX(
+                    CASE
+                        WHEN (aic.AdditionalCost / aic.ExchangeRate) IS NOT NULL THEN (aic.AdditionalCost / aic.ExchangeRate)
+                        ELSE NULL
+                    END
+                ) OVER (
+                    PARTITION BY aic.InquiryDetailId,
+                    aic.MergeCode
+                    ORDER BY
+                        aifd.Description ROWS BETWEEN UNBOUNDED PRECEDING
+                        AND CURRENT ROW
+                )
             ) * (
                 aic.BdnBillingQuantity * 1.0 / SUM(aic.BdnBillingQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
             )
         END AS 'AdditionalCost',
         CASE
-            WHEN (
-                (aic.AdditionalCost) != 0
-                AND (aic.AdditionalCost) IS NOT NULL
-            ) THEN (aic.AdditionalCost) * (
+            WHEN aic.AdditionalCost != 0
+            AND aic.AdditionalCost IS NOT NULL THEN aic.AdditionalCost * (
                 aic.BdnBillingQuantity * 1.0 / SUM(aic.BdnBillingQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
             )
-            ELSE LAG((aic.AdditionalCost)) OVER (
-                PARTITION BY aic.InquiryDetailId,
-                aic.MergeCode
-                ORDER BY
-                    aifd.Description
+            ELSE (
+                MAX(
+                    CASE
+                        WHEN aic.AdditionalCost IS NOT NULL THEN aic.AdditionalCost
+                        ELSE NULL
+                    END
+                ) OVER (
+                    PARTITION BY aic.InquiryDetailId,
+                    aic.MergeCode
+                    ORDER BY
+                        aifd.Description ROWS BETWEEN UNBOUNDED PRECEDING
+                        AND CURRENT ROW
+                )
             ) * (
                 aic.BdnBillingQuantity * 1.0 / SUM(aic.BdnBillingQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
             )
         END AS 'AdditionalCostUSD',
         CASE
-            WHEN (
-                (aic.Discount) != 0
-                AND (aic.Discount) IS NOT NULL
-            ) THEN (aic.Discount) * (
+            WHEN aic.Discount != 0
+            AND aic.Discount IS NOT NULL THEN aic.Discount * (
                 aic.BdnBillingQuantity * 1.0 / SUM(aic.BdnBillingQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
             )
-            ELSE LAG((aic.Discount)) OVER (
-                PARTITION BY aic.InquiryDetailId,
-                aic.MergeCode
-                ORDER BY
-                    aifd.Description
+            ELSE (
+                MAX(
+                    CASE
+                        WHEN aic.Discount IS NOT NULL THEN aic.Discount
+                        ELSE NULL
+                    END
+                ) OVER (
+                    PARTITION BY aic.InquiryDetailId,
+                    aic.MergeCode
+                    ORDER BY
+                        aifd.Description ROWS BETWEEN UNBOUNDED PRECEDING
+                        AND CURRENT ROW
+                )
             ) * (
                 aic.BdnBillingQuantity * 1.0 / SUM(aic.BdnBillingQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
             )
         END AS 'Discount',
         CASE
-            WHEN (
-                (aic.VatAmount) != 0
-                AND (aic.VatAmount) IS NOT NULL
-            ) THEN (aic.VatAmount) * (
+            WHEN aic.VatAmount != 0
+            AND aic.VatAmount IS NOT NULL THEN aic.VatAmount * (
                 aic.BdnBillingQuantity * 1.0 / SUM(aic.BdnBillingQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
             )
-            ELSE LAG((aic.VatAmount)) OVER (
-                PARTITION BY aic.InquiryDetailId,
-                aic.MergeCode
-                ORDER BY
-                    aifd.Description
+            ELSE (
+                MAX(
+                    CASE
+                        WHEN aic.VatAmount IS NOT NULL THEN aic.VatAmount
+                        ELSE NULL
+                    END
+                ) OVER (
+                    PARTITION BY aic.InquiryDetailId,
+                    aic.MergeCode
+                    ORDER BY
+                        aifd.Description ROWS BETWEEN UNBOUNDED PRECEDING
+                        AND CURRENT ROW
+                )
             ) * (
                 aic.BdnBillingQuantity * 1.0 / SUM(aic.BdnBillingQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode)
             )
@@ -1089,15 +1175,21 @@ InvoiceCustomersTest AS (
         it.AdditionalCost,
         it.TotalAmount,
         CASE
-            WHEN (
-                (AmountReceivedSoFar) != 0
-                AND (AmountReceivedSoFar) IS NOT NULL
-            ) THEN (AmountReceivedSoFar)
-            ELSE LAG((AmountReceivedSoFar)) OVER (
-                PARTITION BY it.InquiryDetailId,
-                it.MergeCode
-                ORDER BY
-                    Description
+            WHEN AmountReceivedSoFar != 0
+            AND AmountReceivedSoFar IS NOT NULL THEN AmountReceivedSoFar
+            ELSE (
+                MAX(
+                    CASE
+                        WHEN AmountReceivedSoFar IS NOT NULL THEN AmountReceivedSoFar
+                        ELSE NULL
+                    END
+                ) OVER (
+                    PARTITION BY it.InquiryDetailId,
+                    it.MergeCode
+                    ORDER BY
+                        Description ROWS BETWEEN UNBOUNDED PRECEDING
+                        AND CURRENT ROW
+                )
             )
         END AS 'AmountReceivedSoFars'
     FROM
