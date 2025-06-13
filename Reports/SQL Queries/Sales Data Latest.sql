@@ -33,6 +33,7 @@
  9. Customer Brokerage
  10. Customer Brokerage(USD)
  09-06-2025 - SellerNomination and CustomerNomination Sent On Date added
+ 13-06-2025 - Removed the order by clause
  
  Added the above columns
  */
@@ -706,19 +707,3 @@ Select
     *
 from
     UnionCTE --where [Job Code] IN ('G3254')
-ORDER BY
-    CASE
-        WHEN [Data Source] = 'GS' THEN 0
-        ELSE 1
-    END,
-    CASE
-        WHEN [Stem date] IS NULL THEN 0
-        ELSE 1
-    END,
-    [Stem date] DESC,
-    CASE
-        WHEN LEN([Job code]) > 1 THEN CAST(
-            SUBSTRING([Job code], 2, LEN([Job code]) - 1) AS INT
-        )
-        ELSE 0
-    END DESC
