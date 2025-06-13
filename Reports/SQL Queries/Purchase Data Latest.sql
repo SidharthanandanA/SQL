@@ -736,19 +736,3 @@ Select
     *
 from
     UNIONALLCTE --where [Data source] = 'GS' and DatePaid is null and [Payment Status] = 'Paid'
-ORDER BY
-    CASE
-        WHEN [Data Source] = 'GS' THEN 0
-        ELSE 1
-    END,
-    CASE
-        WHEN [Stem date] IS NULL THEN 0
-        ELSE 1
-    END,
-    [Stem date] DESC,
-    CASE
-        WHEN LEN([Job code]) > 1 THEN CAST(
-            SUBSTRING([Job code], 2, LEN([Job code]) - 1) AS INT
-        )
-        ELSE 0 -- or any other default value you consider appropriate
-    END DESC
