@@ -9,7 +9,6 @@
 -- 1.1 - Proforma amounts added to Amount Received (2025-06-09)
 -- 1.2 - Logic Updated to work for 3 fuel scenarios (2025-06-11)
 -- ===================================================
-
 WITH MISubProformaTable AS (
     SELECT
         aic.Id,
@@ -27,7 +26,10 @@ WITH MISubProformaTable AS (
         CASE
             WHEN (aic.AdditionalCost / aio.ExchangeRate) != 0
             AND (aic.AdditionalCost / aio.ExchangeRate) IS NOT NULL THEN (aic.AdditionalCost / aio.ExchangeRate) * (
-                aic.OrderedQuantity * 1.0 / NULLIF(SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode), 0)
+                aic.OrderedQuantity * 1.0 / NULLIF(
+                    SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode),
+                    0
+                )
             )
             ELSE (
                 MAX(
@@ -43,13 +45,19 @@ WITH MISubProformaTable AS (
                         AND CURRENT ROW
                 )
             ) * (
-                aic.OrderedQuantity * 1.0 / NULLIF(SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode), 0)
+                aic.OrderedQuantity * 1.0 / NULLIF(
+                    SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode),
+                    0
+                )
             )
         END AS 'AdditionalCost',
         CASE
             WHEN aic.AdditionalCost != 0
             AND aic.AdditionalCost IS NOT NULL THEN aic.AdditionalCost * (
-                aic.OrderedQuantity * 1.0 / NULLIF(SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode), 0)
+                aic.OrderedQuantity * 1.0 / NULLIF(
+                    SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode),
+                    0
+                )
             )
             ELSE (
                 MAX(
@@ -65,13 +73,19 @@ WITH MISubProformaTable AS (
                         AND CURRENT ROW
                 )
             ) * (
-                aic.OrderedQuantity * 1.0 / NULLIF(SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode), 0)
+                aic.OrderedQuantity * 1.0 / NULLIF(
+                    SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode),
+                    0
+                )
             )
         END AS 'AdditionalCostUSD',
         CASE
             WHEN aic.VatAmount != 0
             AND aic.VatAmount IS NOT NULL THEN aic.VatAmount * (
-                aic.OrderedQuantity * 1.0 / NULLIF(SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode), 0)
+                aic.OrderedQuantity * 1.0 / NULLIF(
+                    SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode),
+                    0
+                )
             )
             ELSE (
                 MAX(
@@ -87,10 +101,16 @@ WITH MISubProformaTable AS (
                         AND CURRENT ROW
                 )
             ) * (
-                aic.OrderedQuantity * 1.0 / NULLIF(SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode), 0)
+                aic.OrderedQuantity * 1.0 / NULLIF(
+                    SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode),
+                    0
+                )
             )
         END AS 'VatAmount',
-        aic.OrderedQuantity * 1.0 / NULLIF(SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode), 0) AS 'Weights'
+        aic.OrderedQuantity * 1.0 / NULLIF(
+            SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode),
+            0
+        ) AS 'Weights'
     FROM
         AppProformaSellers aic
         JOIN (
@@ -670,7 +690,10 @@ MISubProformaCusTable AS (
         CASE
             WHEN (aic.AdditionalCost / aim.ExchangeRate) != 0
             AND (aic.AdditionalCost / aim.ExchangeRate) IS NOT NULL THEN (aic.AdditionalCost / aim.ExchangeRate) * (
-                aic.OrderedQuantity * 1.0 / NULLIF(SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode), 0)
+                aic.OrderedQuantity * 1.0 / NULLIF(
+                    SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode),
+                    0
+                )
             )
             ELSE (
                 MAX(
@@ -686,13 +709,19 @@ MISubProformaCusTable AS (
                         AND CURRENT ROW
                 )
             ) * (
-                aic.OrderedQuantity * 1.0 / NULLIF(SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode), 0)
+                aic.OrderedQuantity * 1.0 / NULLIF(
+                    SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode),
+                    0
+                )
             )
         END AS 'AdditionalCost',
         CASE
             WHEN aic.AdditionalCost != 0
             AND aic.AdditionalCost IS NOT NULL THEN aic.AdditionalCost * (
-                aic.OrderedQuantity * 1.0 / NULLIF(SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode), 0)
+                aic.OrderedQuantity * 1.0 / NULLIF(
+                    SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode),
+                    0
+                )
             )
             ELSE (
                 MAX(
@@ -708,13 +737,19 @@ MISubProformaCusTable AS (
                         AND CURRENT ROW
                 )
             ) * (
-                aic.OrderedQuantity * 1.0 / NULLIF(SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode), 0)
+                aic.OrderedQuantity * 1.0 / NULLIF(
+                    SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode),
+                    0
+                )
             )
         END AS 'AdditionalCostUSD',
         CASE
             WHEN aic.VatAmount != 0
             AND aic.VatAmount IS NOT NULL THEN aic.VatAmount * (
-                aic.OrderedQuantity * 1.0 / NULLIF(SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode), 0)
+                aic.OrderedQuantity * 1.0 / NULLIF(
+                    SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode),
+                    0
+                )
             )
             ELSE (
                 MAX(
@@ -730,7 +765,10 @@ MISubProformaCusTable AS (
                         AND CURRENT ROW
                 )
             ) * (
-                aic.OrderedQuantity * 1.0 / NULLIF(SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode), 0)
+                aic.OrderedQuantity * 1.0 / NULLIF(
+                    SUM(aic.OrderedQuantity) OVER (PARTITION BY aic.InquiryDetailId, aic.MergeCode),
+                    0
+                )
             )
         END AS 'VatAmount',
         aic.OrderedQuantity * 1.0 / NULLIF(
@@ -1227,7 +1265,10 @@ InvoiceCustomerTables AS (
                             ict.AmountReceivedSoFars * (
                                 (
                                     SUM(ict.TotalAmount) OVER (PARTITION BY ict.InquiryDetailId, ict.MergeCode) - SUM(ict.SubTotal) OVER (PARTITION BY ict.InquiryDetailId, ict.MergeCode)
-                                ) / NULLIF(SUM(ict.TotalAmount) OVER (PARTITION BY ict.InquiryDetailId, ict.MergeCode), 0)
+                                ) / NULLIF(
+                                    SUM(ict.TotalAmount) OVER (PARTITION BY ict.InquiryDetailId, ict.MergeCode),
+                                    0
+                                )
                             )
                         )
                     ) * Weights
