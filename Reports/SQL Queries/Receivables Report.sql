@@ -119,14 +119,17 @@ Query1 AS (
         --	WHEN bpb.BuyerPaymentTerm = 2 THEN CONVERT(DATE, apc.PaymentDueDate)
         --	WHEN bpb.BuyerPaymentTerm <> 2 THEN CONVERT(DATE, DATEADD(DAY, bpb.BuyerCreditTerms, aid.DeliveryStartDateNomination))
         --      END AS 'Payment Due Date',
-        CONVERT(
-            DATE,
-            DATEADD(
-                DAY,
-                bpb.BuyerCreditTerms,
-                aid.DeliveryStartDateNomination
+        CASE
+            WHEN apc.PaymentDueDate IS NOT NULL THEN CONVERT(DATE, apc.PaymentDueDate)
+            ELSE CONVERT(
+                DATE,
+                DATEADD(
+                    DAY,
+                    bpb.BuyerCreditTerms,
+                    aid.DeliveryStartDateNomination
+                )
             )
-        ) AS 'Payment Due Date',
+        END AS 'Payment Due Date',
         NULL AS 'Invoice Date',
         --DATEDIFF(DAY, CONVERT(DATE, DATEADD(DAY, bpb.BuyerCreditTerms, aid.DeliveryStartDateNomination)), GETDATE()) as 'Overdue days',
         --CASE 

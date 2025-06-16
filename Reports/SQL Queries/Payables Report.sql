@@ -66,157 +66,240 @@ SellerMiscCost AS (
     GROUP BY
         InquiryDetailId
 ),
-unionquery AS (
-    (
-        SELECT
-            asel.Name as 'Seller Name',
-            acg.Name as 'Customer Group Name',
-            ab.Name AS 'Broker Name',
-            asg.Name as 'Seller Group',
-            aid.Code AS 'Job Number',
-            --CASE 
-            --	WHEN bpb.SellerPaymentTerm = 2 THEN aps.InvoiceNumber
-            --	WHEN bpb.SellerPaymentTerm <> 2 THEN NULL
-            --      END AS 'Seller Invoice Number',
-            NULL AS 'Seller Invoice Number',
-            --CASE 
-            --	WHEN bpb.SellerPaymentTerm = 2 THEN CONVERT(DATE, aps.PaymentDueDate)
-            --	WHEN bpb.SellerPaymentTerm <> 2 THEN CONVERT(DATE, DATEADD(DAY, bpb.SellerCreditTerms, aid.DeliveryStartDateNomination))
-            --      END AS 'Payment Due Date',
-            CONVERT(
+BookedInvoices AS (
+    SELECT
+        DISTINCT asel.Name as 'Seller Name',
+        acg.Name as 'Customer Group Name',
+        ab.Name AS 'Broker Name',
+        asg.Name as 'Seller Group',
+        aid.Code AS 'Job Number',
+        --CASE 
+        --	WHEN bpb.SellerPaymentTerm = 2 THEN aps.InvoiceNumber
+        --	WHEN bpb.SellerPaymentTerm <> 2 THEN NULL
+        --      END AS 'Seller Invoice Number',
+        NULL AS 'Seller Invoice Number',
+        --CASE 
+        --	WHEN bpb.SellerPaymentTerm = 2 THEN CONVERT(DATE, aps.PaymentDueDate)
+        --	WHEN bpb.SellerPaymentTerm <> 2 THEN CONVERT(DATE, DATEADD(DAY, bpb.SellerCreditTerms, aid.DeliveryStartDateNomination))
+        --      END AS 'Payment Due Date',
+        CASE
+            WHEN aps.PaymentDueDate IS NULL THEN CONVERT(
                 DATE,
                 DATEADD(
                     DAY,
                     bpb.SellerCreditTerms,
                     aid.DeliveryStartDateNomination
                 )
-            ) AS 'Payment Due Date',
-            NULL AS 'Invoice Date',
-            --DATEDIFF(DAY, CONVERT(DATE, DATEADD(DAY, bpb.SellerCreditTerms, aid.DeliveryStartDateNomination)), GETDATE()) as 'Overdue days',
-            --CASE 
-            --	WHEN bpb.SellerPaymentTerm = 2 THEN DATEDIFF(DAY, CONVERT(DATE,aps.PaymentDueDate), GETDATE())
-            --	WHEN bpb.SellerPaymentTerm <> 2 THEN DATEDIFF(DAY, CONVERT(DATE, DATEADD(DAY, bpb.SellerCreditTerms,aid.DeliveryStartDateNomination)), GETDATE())
-            --      END AS 'Overdue days',
-            NULL AS 'Overdue days',
-            CASE
-                WHEN aps.BalanceDue IS NOT NULL THEN ROUND(aps.BalanceDue, 2)
-                WHEN smc.SellerMiscCost IS NULL THEN bpb.QuantityMax * aim.BuyPrice
-                WHEN smc.SellerMiscCost IS NOT NULL THEN bpb.QuantityMax * aim.BuyPrice + smc.SellerMiscCost
-            END AS 'Outstanding Amount',
-            CASE
-                WHEN aps.BalanceDue IS NOT NULL THEN CASE
-                    WHEN acur.Code = 'AED' THEN ROUND(aps.BalanceDue / 3.6725, 2)
-                    ELSE ROUND(aps.BalanceDue * aio.ExchangeRate, 2)
-                END
-                WHEN smc.SellerMiscCost IS NULL
-                AND acur.Code = 'AED' THEN (bpb.QuantityMax * aim.BuyPrice) / 3.6725
-                WHEN smc.SellerMiscCost IS NULL
-                AND acur.Code <> 'AED' THEN bpb.QuantityMax * aim.BuyPriceUsd
-                WHEN smc.SellerMiscCost IS NOT NULL
-                AND acur.Code = 'AED' THEN (
-                    bpb.QuantityMax * aim.BuyPrice + smc.SellerMiscCost
-                ) / 3.6725
-                WHEN smc.SellerMiscCost IS NOT NULL
-                AND acur.Code <> 'AED' THEN bpb.QuantityMax * aim.BuyPriceUsd + smc.SellerMiscCost
-            END AS 'Outstanding Amount(USD)',
-            CASE
-                WHEN aps.TotalAmount IS NOT NULL THEN ROUND(aps.TotalAmount, 2)
-                WHEN smc.SellerMiscCost IS NULL THEN bpb.QuantityMax * aim.BuyPrice
-                WHEN smc.SellerMiscCost IS NOT NULL THEN bpb.QuantityMax * aim.BuyPrice + smc.SellerMiscCost
-            END AS 'Invoice Amount',
-            CASE
-                WHEN aps.TotalAmount IS NOT NULL THEN CASE
-                    WHEN acur.Code = 'AED' THEN ROUND(aps.TotalAmount / 3.6725, 2)
-                    ELSE ROUND(aps.TotalAmount * aio.ExchangeRate, 2)
-                END
-                WHEN smc.SellerMiscCost IS NULL
-                AND acur.Code = 'AED' THEN (bpb.QuantityMax * aim.BuyPrice) / 3.6725
-                WHEN smc.SellerMiscCost IS NULL
-                AND acur.Code <> 'AED' THEN bpb.QuantityMax * aim.BuyPriceUsd
-                WHEN smc.SellerMiscCost IS NOT NULL
-                AND acur.Code = 'AED' THEN (
-                    bpb.QuantityMax * aim.BuyPrice + smc.SellerMiscCost
-                ) / 3.6725
-                WHEN smc.SellerMiscCost IS NOT NULL
-                AND acur.Code <> 'AED' THEN bpb.QuantityMax * aim.BuyPriceUsd + smc.SellerMiscCost
-            END AS 'Invoice Amount(USD)',
-            --CASE 
-            --	WHEN bpb.SellerPaymentTerm = 2 THEN ROUND(aps.AmountPaid,2)
-            --	WHEN bpb.SellerPaymentTerm <> 2 THEN NULL
-            --      END AS 'Amount Paid So Far',
-            CASE
-                WHEN aps.AmountPaid IS NOT NULL AND (aifd.IsDelivered = 0 OR aifd.IsCancelled = 1) THEN ROUND(aps.AmountPaid, 2)
-                ELSE 0
-            END AS 'Amount Paid So Far',
-            CASE
-                WHEN aps.AmountPaid IS NOT NULL AND (aifd.IsDelivered = 0 OR aifd.IsCancelled = 1)
-                AND acur.Code = 'AED' THEN ROUND(aps.AmountPaid / 3.6725, 2)
-                WHEN aps.AmountPaid IS NOT NULL AND (aifd.IsDelivered = 0 OR aifd.IsCancelled = 1)
-                AND acur.Code <> 'AED' THEN ROUND(aps.AmountPaid * aio.ExchangeRate, 2)
-                ELSE 0
-            END AS 'Amount Paid So Far(USD)',
-            av.Name AS 'Vessel',
-            ap.Name AS 'Port Name',
-            aup.Name AS 'Assignee',
-            CONVERT(DATE, aid.DeliveryStartDateNomination) AS 'Delivery Date',
-            NULL AS 'Expected Payment Date',
-            acur.Code as 'Currency',
-            'Uninvoiced' AS 'Invoice Status',
-            NULL AS 'Cancellation Status',
-            CASE
-                --WHEN bpb.SellerPaymentTerm = 2 THEN 'Booked (CIA)'
-                WHEN aid.InquiryStatus = 0 THEN 'Draft'
-                WHEN aid.InquiryStatus = 100 THEN 'Raised By Client'
-                WHEN aid.InquiryStatus = 200 THEN 'Sent For Approval'
-                WHEN aid.InquiryStatus = 300 THEN 'Rejected'
-                WHEN aid.InquiryStatus = 400 THEN 'Approved'
-                WHEN aid.InquiryStatus = 500 THEN 'PreApproved'
-                WHEN aid.InquiryStatus = 600 THEN 'Auction'
-                WHEN aid.InquiryStatus = 700 THEN 'Partly Booked'
-                WHEN aid.InquiryStatus = 800 THEN 'Booked'
-                WHEN aid.InquiryStatus = 900 THEN 'Partly Delivered'
-                WHEN aid.InquiryStatus = 1000 THEN 'Delivered'
-                WHEN aid.InquiryStatus = 1500 THEN 'Lost Stem'
-                WHEN aid.InquiryStatus = 9000 THEN 'Cancelled'
-                WHEN aid.InquiryStatus = 10000 THEN 'Invoiced'
-                WHEN aid.InquiryStatus = 15000 THEN 'Closed'
-            END AS 'Job Status',
-            NULL AS 'Payment Status'
-        FROM
-            BookedAndPartlyBookedCTE bpb
-            JOIN AppInquiryDetails aid ON bpb.InquiryDetailId = aid.Id
-            JOIN AppInquiryFuelDetails aifd ON aid.Id = aifd.InquiryDetailId --LEFT JOIN AppProformaSellers aps ON aps.InquiryNominationId = bpb.Id AND aps.IsDeleted = 0
-            LEFT JOIN AppSellers asel ON asel.Id = aifd.SellerId
-            LEFT JOIN AppSellerGroups asg ON asg.Id = asel.SellerGroupId
-            LEFT JOIN SellerMiscCost smc ON smc.InquiryDetailId = aid.Id
-            JOIN AppInquiryMargins aim ON aim.InquirySellerDetailId = bpb.InquirySellerDetailId
-            JOIN AppInquirySellerDetails aisd ON aid.Id = aisd.InquiryDetailId
-            and aifd.SellerId = aisd.SellerId
-            and bpb.InquirySellerDetailId = aisd.Id
-            JOIN AppInquiryOffers aio On aio.SellerId = aisd.SellerId
-            and aio.SellerId = aifd.SellerId
-            JOIN AppCurrencies acur ON acur.Id = aio.CurrencyId
-            and aisd.InquiryDetailId = aio.InquiryDetailId
-            LEFT JOIN AppVessel av ON av.Id = aid.VesselNominationId
-            LEFT JOIN AppPorts ap ON ap.Id = aid.PortNominationId
-            LEFT JOIN AppUserProfiles aup ON aup.Id = aid.UserProfileId
-            LEFT JOIN AppInquiryBrokerDetails aibd ON aibd.InquiryFuelDetailId = aifd.Id
-            and aibd.IsDeleted = 0
-            LEFT JOIN AppBrokers ab ON ab.Id = aibd.SellerBrokerId
-            AND ab.IsDeleted = 0
-            LEFT JOIN AppCustomers ac ON ac.Id = aid.CustomerNominationId
-            AND ac.IsDeleted = 0
-            LEFT JOIN AppCustomerGroups acg ON acg.Id = ac.CustomerGroupId
-            AND acg.IsDeleted = 0
-            LEFT JOIN AppProformaSellers aps ON aps.InquiryFuelDetailId = aifd.Id
-            and aps.IsDeleted = 0
-        where
-            aid.InquiryStatus = 700
-            or aid.InquiryStatus = 800
-            or aid.InquiryStatus = 900
-            or aid.InquiryStatus = 1000
-    )
-    UNION
+            )
+            ELSE CONVERT(DATE, aps.PaymentDueDate)
+        END AS 'Payment Due Date',
+        NULL AS 'Invoice Date',
+        --DATEDIFF(DAY, CONVERT(DATE, DATEADD(DAY, bpb.SellerCreditTerms, aid.DeliveryStartDateNomination)), GETDATE()) as 'Overdue days',
+        --CASE 
+        --	WHEN bpb.SellerPaymentTerm = 2 THEN DATEDIFF(DAY, CONVERT(DATE,aps.PaymentDueDate), GETDATE())
+        --	WHEN bpb.SellerPaymentTerm <> 2 THEN DATEDIFF(DAY, CONVERT(DATE, DATEADD(DAY, bpb.SellerCreditTerms,aid.DeliveryStartDateNomination)), GETDATE())
+        --      END AS 'Overdue days',
+        NULL AS 'Overdue days',
+        CASE
+            WHEN aps.BalanceDue IS NOT NULL
+            AND (
+                aifd.IsDelivered = 0
+                OR aifd.IsCancelled = 1
+            ) THEN ROUND(aps.BalanceDue, 2)
+            WHEN smc.SellerMiscCost IS NULL
+            AND (
+                aifd.IsDelivered = 0
+                OR aifd.IsCancelled = 1
+            ) THEN bpb.QuantityMax * aim.BuyPrice
+            WHEN smc.SellerMiscCost IS NOT NULL
+            AND (
+                aifd.IsDelivered = 0
+                OR aifd.IsCancelled = 1
+            ) THEN bpb.QuantityMax * aim.BuyPrice + smc.SellerMiscCost
+            ELSE 0
+        END AS 'Outstanding Amount',
+        CASE
+            WHEN aps.BalanceDue IS NOT NULL
+            AND (
+                aifd.IsDelivered = 0
+                OR aifd.IsCancelled = 1
+            ) THEN CASE
+                WHEN acur.Code = 'AED' THEN ROUND(aps.BalanceDue / 3.6725, 2)
+                ELSE ROUND(aps.BalanceDue * aio.ExchangeRate, 2)
+            END
+            WHEN smc.SellerMiscCost IS NULL
+            AND (
+                aifd.IsDelivered = 0
+                OR aifd.IsCancelled = 1
+            )
+            AND acur.Code = 'AED' THEN (bpb.QuantityMax * aim.BuyPrice) / 3.6725
+            WHEN smc.SellerMiscCost IS NULL
+            AND (
+                aifd.IsDelivered = 0
+                OR aifd.IsCancelled = 1
+            )
+            AND acur.Code <> 'AED' THEN bpb.QuantityMax * aim.BuyPriceUsd
+            WHEN smc.SellerMiscCost IS NOT NULL
+            AND (
+                aifd.IsDelivered = 0
+                OR aifd.IsCancelled = 1
+            )
+            AND acur.Code = 'AED' THEN (
+                bpb.QuantityMax * aim.BuyPrice + smc.SellerMiscCost
+            ) / 3.6725
+            WHEN smc.SellerMiscCost IS NOT NULL
+            AND (
+                aifd.IsDelivered = 0
+                OR aifd.IsCancelled = 1
+            )
+            AND acur.Code <> 'AED' THEN bpb.QuantityMax * aim.BuyPriceUsd + smc.SellerMiscCost
+            ELSE 0
+        END AS 'Outstanding Amount(USD)',
+        CASE
+            WHEN aps.TotalAmount IS NOT NULL
+            AND (
+                aifd.IsDelivered = 0
+                OR aifd.IsCancelled = 1
+            ) THEN ROUND(aps.TotalAmount, 2)
+            WHEN smc.SellerMiscCost IS NULL
+            AND (
+                aifd.IsDelivered = 0
+                OR aifd.IsCancelled = 1
+            ) THEN bpb.QuantityMax * aim.BuyPrice
+            WHEN smc.SellerMiscCost IS NOT NULL
+            AND (
+                aifd.IsDelivered = 0
+                OR aifd.IsCancelled = 1
+            ) THEN bpb.QuantityMax * aim.BuyPrice + smc.SellerMiscCost
+            ELSE 0
+        END AS 'Invoice Amount',
+        CASE
+            WHEN aps.TotalAmount IS NOT NULL
+            AND (
+                aifd.IsDelivered = 0
+                OR aifd.IsCancelled = 1
+            ) THEN CASE
+                WHEN acur.Code = 'AED' THEN ROUND(aps.TotalAmount / 3.6725, 2)
+                ELSE ROUND(aps.TotalAmount * aio.ExchangeRate, 2)
+            END
+            WHEN smc.SellerMiscCost IS NULL
+            AND (
+                aifd.IsDelivered = 0
+                OR aifd.IsCancelled = 1
+            )
+            AND acur.Code = 'AED' THEN (bpb.QuantityMax * aim.BuyPrice) / 3.6725
+            WHEN smc.SellerMiscCost IS NULL
+            AND (
+                aifd.IsDelivered = 0
+                OR aifd.IsCancelled = 1
+            )
+            AND acur.Code <> 'AED' THEN bpb.QuantityMax * aim.BuyPriceUsd
+            WHEN smc.SellerMiscCost IS NOT NULL
+            AND (
+                aifd.IsDelivered = 0
+                OR aifd.IsCancelled = 1
+            )
+            AND acur.Code = 'AED' THEN (
+                bpb.QuantityMax * aim.BuyPrice + smc.SellerMiscCost
+            ) / 3.6725
+            WHEN smc.SellerMiscCost IS NOT NULL
+            AND (
+                aifd.IsDelivered = 0
+                OR aifd.IsCancelled = 1
+            )
+            AND acur.Code <> 'AED' THEN bpb.QuantityMax * aim.BuyPriceUsd + smc.SellerMiscCost
+            ELSE 0
+        END AS 'Invoice Amount(USD)',
+        --CASE 
+        --	WHEN bpb.SellerPaymentTerm = 2 THEN ROUND(aps.AmountPaid,2)
+        --	WHEN bpb.SellerPaymentTerm <> 2 THEN NULL
+        --      END AS 'Amount Paid So Far',
+        CASE
+            WHEN aps.AmountPaid IS NOT NULL
+            AND (
+                aifd.IsDelivered = 0
+                OR aifd.IsCancelled = 1
+            ) THEN ROUND(aps.AmountPaid, 2)
+            ELSE 0
+        END AS 'Amount Paid So Far',
+        CASE
+            WHEN aps.AmountPaid IS NOT NULL
+            AND (
+                aifd.IsDelivered = 0
+                OR aifd.IsCancelled = 1
+            )
+            AND acur.Code = 'AED' THEN ROUND(aps.AmountPaid / 3.6725, 2)
+            WHEN aps.AmountPaid IS NOT NULL
+            AND (
+                aifd.IsDelivered = 0
+                OR aifd.IsCancelled = 1
+            )
+            AND acur.Code <> 'AED' THEN ROUND(aps.AmountPaid * aio.ExchangeRate, 2)
+            ELSE 0
+        END AS 'Amount Paid So Far(USD)',
+        av.Name AS 'Vessel',
+        ap.Name AS 'Port Name',
+        aup.Name AS 'Assignee',
+        CONVERT(DATE, aid.DeliveryStartDateNomination) AS 'Delivery Date',
+        NULL AS 'Expected Payment Date',
+        acur.Code as 'Currency',
+        'Uninvoiced' AS 'Invoice Status',
+        NULL AS 'Cancellation Status',
+        CASE
+            --WHEN bpb.SellerPaymentTerm = 2 THEN 'Booked (CIA)'
+            WHEN aid.InquiryStatus = 0 THEN 'Draft'
+            WHEN aid.InquiryStatus = 100 THEN 'Raised By Client'
+            WHEN aid.InquiryStatus = 200 THEN 'Sent For Approval'
+            WHEN aid.InquiryStatus = 300 THEN 'Rejected'
+            WHEN aid.InquiryStatus = 400 THEN 'Approved'
+            WHEN aid.InquiryStatus = 500 THEN 'PreApproved'
+            WHEN aid.InquiryStatus = 600 THEN 'Auction'
+            WHEN aid.InquiryStatus = 700 THEN 'Partly Booked'
+            WHEN aid.InquiryStatus = 800 THEN 'Booked'
+            WHEN aid.InquiryStatus = 900 THEN 'Partly Delivered'
+            WHEN aid.InquiryStatus = 1000 THEN 'Delivered'
+            WHEN aid.InquiryStatus = 1500 THEN 'Lost Stem'
+            WHEN aid.InquiryStatus = 9000 THEN 'Cancelled'
+            WHEN aid.InquiryStatus = 10000 THEN 'Invoiced'
+            WHEN aid.InquiryStatus = 15000 THEN 'Closed'
+        END AS 'Job Status',
+        NULL AS 'Payment Status'
+    FROM
+        BookedAndPartlyBookedCTE bpb
+        JOIN AppInquiryDetails aid ON bpb.InquiryDetailId = aid.Id
+        JOIN AppInquiryFuelDetails aifd ON aid.Id = aifd.InquiryDetailId --LEFT JOIN AppProformaSellers aps ON aps.InquiryNominationId = bpb.Id AND aps.IsDeleted = 0
+        LEFT JOIN AppSellers asel ON asel.Id = aifd.SellerId
+        LEFT JOIN AppSellerGroups asg ON asg.Id = asel.SellerGroupId
+        LEFT JOIN SellerMiscCost smc ON smc.InquiryDetailId = aid.Id
+        JOIN AppInquiryMargins aim ON aim.InquirySellerDetailId = bpb.InquirySellerDetailId
+        JOIN AppInquirySellerDetails aisd ON aid.Id = aisd.InquiryDetailId
+        and aifd.SellerId = aisd.SellerId
+        and bpb.InquirySellerDetailId = aisd.Id
+        JOIN AppInquiryOffers aio On aio.SellerId = aisd.SellerId
+        and aio.SellerId = aifd.SellerId
+        JOIN AppCurrencies acur ON acur.Id = aio.CurrencyId
+        and aisd.InquiryDetailId = aio.InquiryDetailId
+        LEFT JOIN AppVessel av ON av.Id = aid.VesselNominationId
+        LEFT JOIN AppPorts ap ON ap.Id = aid.PortNominationId
+        LEFT JOIN AppUserProfiles aup ON aup.Id = aid.UserProfileId
+        LEFT JOIN AppInquiryBrokerDetails aibd ON aibd.InquiryFuelDetailId = aifd.Id
+        and aibd.IsDeleted = 0
+        LEFT JOIN AppBrokers ab ON ab.Id = aibd.SellerBrokerId
+        AND ab.IsDeleted = 0
+        LEFT JOIN AppCustomers ac ON ac.Id = aid.CustomerNominationId
+        AND ac.IsDeleted = 0
+        LEFT JOIN AppCustomerGroups acg ON acg.Id = ac.CustomerGroupId
+        AND acg.IsDeleted = 0
+        LEFT JOIN AppProformaSellers aps ON aps.InquiryFuelDetailId = aifd.Id
+        and aps.IsDeleted = 0
+    where
+        aid.InquiryStatus = 700
+        or aid.InquiryStatus = 800
+        or aid.InquiryStatus = 900
+        or aid.InquiryStatus = 1000
+        AND (aifd.IsDelivered = 0)
+),
+DeliveredInvoices AS (
     (
         Select
             DISTINCT asel.Name as 'Seller Name',
@@ -344,6 +427,18 @@ unionquery AS (
             and aics.IsDeleted = 0
     )
 ),
+unionquery AS (
+    SELECT
+        *
+    FROM
+        BookedInvoices
+    UNION
+    ALL
+    SELECT
+        *
+    FROM
+        DeliveredInvoices
+),
 GroupedInvoices AS (
     SELECT
         [Seller Invoice Number],
@@ -429,7 +524,7 @@ SELECT
 FROM
     GroupedInvoices
 WHERE
-    [Seller Name] IS NOT NULL --and [Job Number] = 'G2972'--AND [Invoice Status] <> 'Paid'
+    [Seller Name] IS NOT NULL --and [Job Number] = 'G3489' --AND [Invoice Status] <> 'Paid'
 ORDER BY
     CAST(
         SUBSTRING([Job Number], 2, LEN([Job Number]) - 1) AS INT
