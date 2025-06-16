@@ -135,7 +135,7 @@ Query1 AS (
         --      END AS 'Overdue days',
         NULL AS 'Overdue days',
         CASE
-            --WHEN bpb.BuyerPaymentTerm = 2 THEN ROUND(apc.BalanceDue,2)
+            WHEN apc.BalanceDue IS NOT NULL THEN ROUND(apc.BalanceDue, 2)
             WHEN bmc.BuyerMiscCost IS NULL THEN ROUND(bpb.QuantityMax * aim.SellPrice, 2)
             WHEN bmc.BuyerMiscCost IS NOT NULL THEN ROUND(
                 bpb.QuantityMax * aim.SellPrice + bmc.BuyerMiscCost,
@@ -143,10 +143,16 @@ Query1 AS (
             )
         END AS 'Outstanding Amount',
         CASE
-            -- WHEN bpb.BuyerPaymentTerm = 2 THEN ROUND(apc.BalanceDue, 2)
+            WHEN apc.BalanceDue IS NOT NULL THEN CASE
+                WHEN acur.Code = 'AED' THEN ROUND(apc.BalanceDue / 3.6725, 2)
+                ELSE ROUND(apc.BalanceDue * aim.ExchangeRate, 2)
+            END
             WHEN bmc.BuyerMiscCost IS NULL THEN CASE
                 WHEN acur.Code = 'AED' THEN ROUND(bpb.QuantityMax * aim.SellPrice / 3.6725, 2)
-                ELSE ROUND(bpb.QuantityMax * aim.SellPriceUsd, 2)
+                ELSE ROUND(
+                    bpb.QuantityMax * aim.SellPriceUsd * aim.ExchangeRate,
+                    2
+                )
             END
             WHEN bmc.BuyerMiscCost IS NOT NULL THEN CASE
                 WHEN acur.Code = 'AED' THEN ROUND(
@@ -156,13 +162,15 @@ Query1 AS (
                     2
                 )
                 ELSE ROUND(
-                    bpb.QuantityMax * aim.SellPriceUsd + bmc.BuyerMiscCost,
+                    (
+                        bpb.QuantityMax * aim.SellPriceUsd + bmc.BuyerMiscCost
+                    ) * aim.ExchangeRate,
                     2
                 )
             END
         END AS 'Outstanding Amount(USD)',
         CASE
-            --WHEN bpb.BuyerPaymentTerm = 2 THEN ROUND(apc.TotalAmount,2)
+            WHEN apc.TotalAmount IS NOT NULL THEN ROUND(apc.TotalAmount, 2)
             WHEN bmc.BuyerMiscCost IS NULL THEN ROUND(bpb.QuantityMax * aim.SellPrice, 2)
             WHEN bmc.BuyerMiscCost IS NOT NULL THEN ROUND(
                 bpb.QuantityMax * aim.SellPrice + bmc.BuyerMiscCost,
@@ -170,7 +178,10 @@ Query1 AS (
             )
         END AS 'Invoice Amount',
         CASE
-            -- WHEN bpb.BuyerPaymentTerm = 2 THEN ROUND(apc.TotalAmount, 2)
+            WHEN apc.TotalAmount IS NOT NULL THEN CASE
+                WHEN acur.Code = 'AED' THEN ROUND(apc.TotalAmount / 3.6725, 2)
+                ELSE ROUND(apc.TotalAmount * aim.ExchangeRate, 2)
+            END
             WHEN bmc.BuyerMiscCost IS NULL THEN CASE
                 WHEN acur.Code = 'AED' THEN ROUND(bpb.QuantityMax * aim.SellPrice / 3.6725, 2)
                 ELSE ROUND(bpb.QuantityMax * aim.SellPriceUsd, 2)
@@ -188,12 +199,17 @@ Query1 AS (
                 )
             END
         END AS 'Invoice Amount(USD)',
-        --CASE 
-        --	WHEN bpb.BuyerPaymentTerm = 2 THEN ROUND(apc.AmountReceived,2)
-        --	WHEN bpb.BuyerPaymentTerm <> 2 THEN NULL
-        --      END AS 'Amount Received So Far',
-        NULL AS 'Amount Received So Far',
-        NULL AS 'Amount Received So Far(USD)',
+        CASE
+            WHEN apc.AmountReceived IS NOT NULL THEN apc.AmountReceived
+            ELSE 0
+        END AS 'Amount Received So Far',
+        CASE
+            WHEN apc.AmountReceived IS NOT NULL THEN CASE
+                WHEN acur.Code = 'AED' THEN ROUND(apc.AmountReceived / 3.6725, 2)
+                ELSE ROUND(apc.AmountReceived * aim.ExchangeRate, 2)
+            END
+            ELSE 0
+        END AS 'Amount Received So Far(USD)',
         av.Name as 'Vessel',
         ap.Name as 'Port Name',
         aup.Name as 'Assignee',
@@ -265,39 +281,30 @@ Query2 AS (
             WHEN acur.Code <> 'AED' THEN ROUND(aic.TotalAmount * aim.ExchangeRate, 2)
         END AS 'InvoiceAmount(USD)',
         CASE
-            WHEN aic.AmountReceivedSoFar IS NULL THEN CASE
-                WHEN apc.AmountReceived IS NULL THEN aic.TotalAmount - aic.BalanceDue
-                WHEN apc.AmountReceived IS NOT NULL THEN aic.TotalAmount - (aic.BalanceDue + apc.AmountReceived)
-            END
+            WHEN apc.AmountReceived IS NOT NULL THEN aic.AmountReceivedSoFar + apc.AmountReceived
             ELSE aic.AmountReceivedSoFar
         END AS 'Amount Received So Far',
         CASE
-            WHEN acur.Code = 'AED' THEN CASE
-                WHEN aic.AmountReceivedSoFar IS NULL THEN CASE
-                    WHEN apc.AmountReceived IS NULL THEN ROUND((aic.TotalAmount - (aic.BalanceDue)) / 3.6725, 2)
-                    WHEN apc.AmountReceived IS NOT NULL THEN ROUND(
-                        (
-                            aic.TotalAmount - (aic.BalanceDue + apc.AmountReceived)
-                        ) / 3.6725,
-                        2
-                    )
-                END
-                ELSE ROUND(aic.AmountReceivedSoFar / 3.6725, 2)
+            WHEN apc.AmountReceived IS NOT NULL THEN CASE
+                WHEN acur.Code = 'AED' THEN ROUND(
+                    (
+                        ISNULL(aic.AmountReceivedSoFar, 0) + apc.AmountReceived
+                    ) / 3.6725,
+                    2
+                )
+                ELSE ROUND(
+                    (
+                        ISNULL(aic.AmountReceivedSoFar, 0) + apc.AmountReceived
+                    ) * aim.ExchangeRate,
+                    2
+                )
             END
-            WHEN acur.Code <> 'AED' THEN CASE
-                WHEN aic.AmountReceivedSoFar IS NULL THEN CASE
-                    WHEN apc.AmountReceived IS NULL THEN ROUND(
-                        (aic.TotalAmount - (aic.BalanceDue)) * aim.ExchangeRate,
-                        2
-                    )
-                    WHEN apc.AmountReceived IS NOT NULL THEN ROUND(
-                        (
-                            aic.TotalAmount - (aic.BalanceDue + apc.AmountReceived)
-                        ) * aim.ExchangeRate,
-                        2
-                    )
-                END
-                ELSE ROUND(aic.AmountReceivedSoFar * aim.ExchangeRate, 2)
+            ELSE CASE
+                WHEN acur.Code = 'AED' THEN ROUND(ISNULL(aic.AmountReceivedSoFar, 0) / 3.6725, 2)
+                ELSE ROUND(
+                    ISNULL(aic.AmountReceivedSoFar, 0) * aim.ExchangeRate,
+                    2
+                )
             END
         END AS 'Amount Received So Far(USD)',
         av.Name AS Vessel,

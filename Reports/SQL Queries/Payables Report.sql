@@ -99,16 +99,19 @@ unionquery AS (
             --      END AS 'Overdue days',
             NULL AS 'Overdue days',
             CASE
-                --WHEN bpb.SellerPaymentTerm = 2 THEN ROUND(aps.BalanceDue,2)
+                WHEN aps.BalanceDue IS NOT NULL THEN ROUND(aps.BalanceDue, 2)
                 WHEN smc.SellerMiscCost IS NULL THEN bpb.QuantityMax * aim.BuyPrice
                 WHEN smc.SellerMiscCost IS NOT NULL THEN bpb.QuantityMax * aim.BuyPrice + smc.SellerMiscCost
             END AS 'Outstanding Amount',
             CASE
-                --WHEN bpb.SellerPaymentTerm = 2 THEN ROUND(aps.BalanceDue,2)
+                WHEN aps.BalanceDue IS NOT NULL THEN CASE
+                    WHEN acur.Code = 'AED' THEN ROUND(aps.BalanceDue / 3.6725, 2)
+                    ELSE ROUND(aps.BalanceDue * aio.ExchangeRate, 2)
+                END
                 WHEN smc.SellerMiscCost IS NULL
-                and acur.Code = 'AED' THEN (bpb.QuantityMax * aim.BuyPrice) / 3.6725
+                AND acur.Code = 'AED' THEN (bpb.QuantityMax * aim.BuyPrice) / 3.6725
                 WHEN smc.SellerMiscCost IS NULL
-                and acur.Code <> 'AED' THEN bpb.QuantityMax * aim.BuyPriceUsd
+                AND acur.Code <> 'AED' THEN bpb.QuantityMax * aim.BuyPriceUsd
                 WHEN smc.SellerMiscCost IS NOT NULL
                 AND acur.Code = 'AED' THEN (
                     bpb.QuantityMax * aim.BuyPrice + smc.SellerMiscCost
@@ -117,29 +120,41 @@ unionquery AS (
                 AND acur.Code <> 'AED' THEN bpb.QuantityMax * aim.BuyPriceUsd + smc.SellerMiscCost
             END AS 'Outstanding Amount(USD)',
             CASE
-                --WHEN bpb.SellerPaymentTerm = 2 THEN ROUND(aps.TotalAmount,2)
+                WHEN aps.TotalAmount IS NOT NULL THEN ROUND(aps.TotalAmount, 2)
                 WHEN smc.SellerMiscCost IS NULL THEN bpb.QuantityMax * aim.BuyPrice
                 WHEN smc.SellerMiscCost IS NOT NULL THEN bpb.QuantityMax * aim.BuyPrice + smc.SellerMiscCost
             END AS 'Invoice Amount',
             CASE
-                --WHEN bpb.SellerPaymentTerm = 2 THEN ROUND(aps.TotalAmount,2)
+                WHEN aps.TotalAmount IS NOT NULL THEN CASE
+                    WHEN acur.Code = 'AED' THEN ROUND(aps.TotalAmount / 3.6725, 2)
+                    ELSE ROUND(aps.TotalAmount * aio.ExchangeRate, 2)
+                END
                 WHEN smc.SellerMiscCost IS NULL
-                and acur.Code = 'AED' THEN (bpb.QuantityMax * aim.BuyPrice) / 3.6725
+                AND acur.Code = 'AED' THEN (bpb.QuantityMax * aim.BuyPrice) / 3.6725
                 WHEN smc.SellerMiscCost IS NULL
-                and acur.Code <> 'AED' THEN bpb.QuantityMax * aim.BuyPriceUsd
+                AND acur.Code <> 'AED' THEN bpb.QuantityMax * aim.BuyPriceUsd
                 WHEN smc.SellerMiscCost IS NOT NULL
-                and acur.Code = 'AED' THEN (
+                AND acur.Code = 'AED' THEN (
                     bpb.QuantityMax * aim.BuyPrice + smc.SellerMiscCost
                 ) / 3.6725
                 WHEN smc.SellerMiscCost IS NOT NULL
-                and acur.Code <> 'AED' THEN bpb.QuantityMax * aim.BuyPriceUsd + smc.SellerMiscCost
+                AND acur.Code <> 'AED' THEN bpb.QuantityMax * aim.BuyPriceUsd + smc.SellerMiscCost
             END AS 'Invoice Amount(USD)',
             --CASE 
             --	WHEN bpb.SellerPaymentTerm = 2 THEN ROUND(aps.AmountPaid,2)
             --	WHEN bpb.SellerPaymentTerm <> 2 THEN NULL
             --      END AS 'Amount Paid So Far',
-            NULL AS 'Amount Paid So Far',
-            NULL AS 'Amount Paid So Far(USD)',
+            CASE
+                WHEN aps.AmountPaid IS NOT NULL AND (aifd.IsDelivered = 0 OR aifd.IsCancelled = 1) THEN ROUND(aps.AmountPaid, 2)
+                ELSE 0
+            END AS 'Amount Paid So Far',
+            CASE
+                WHEN aps.AmountPaid IS NOT NULL AND (aifd.IsDelivered = 0 OR aifd.IsCancelled = 1)
+                AND acur.Code = 'AED' THEN ROUND(aps.AmountPaid / 3.6725, 2)
+                WHEN aps.AmountPaid IS NOT NULL AND (aifd.IsDelivered = 0 OR aifd.IsCancelled = 1)
+                AND acur.Code <> 'AED' THEN ROUND(aps.AmountPaid * aio.ExchangeRate, 2)
+                ELSE 0
+            END AS 'Amount Paid So Far(USD)',
             av.Name AS 'Vessel',
             ap.Name AS 'Port Name',
             aup.Name AS 'Assignee',
@@ -193,6 +208,8 @@ unionquery AS (
             AND ac.IsDeleted = 0
             LEFT JOIN AppCustomerGroups acg ON acg.Id = ac.CustomerGroupId
             AND acg.IsDeleted = 0
+            LEFT JOIN AppProformaSellers aps ON aps.InquiryFuelDetailId = aifd.Id
+            and aps.IsDeleted = 0
         where
             aid.InquiryStatus = 700
             or aid.InquiryStatus = 800
@@ -222,35 +239,28 @@ unionquery AS (
                 ELSE ROUND(ais.TotalAmount * aio.ExchangeRate, 2)
             END as 'Invoice Amount(USD)',
             CASE
-                WHEN aps.AmountPaid IS NULL THEN ROUND(ais.TotalAmount - (ais.BalanceDue), 2)
                 WHEN aps.AmountPaid IS NOT NULL THEN ROUND(
-                    ais.TotalAmount - (ais.BalanceDue + aps.AmountPaid),
+                    aps.AmountPaid + ISNULL(ais.AmountPaidSoFar, 0),
                     2
                 )
+                WHEN aps.AmountPaid IS NULL THEN ROUND(ais.AmountPaidSoFar, 2)
             END AS 'Amount Paid So Far',
             CASE
-                WHEN aps.AmountPaid IS NULL
-                AND acur.Code = 'AED' THEN ROUND(
-                    (ais.TotalAmount - (ais.BalanceDue)) / 3.6725,
-                    2
-                )
-                WHEN aps.AmountPaid IS NULL
-                AND acur.Code <> 'AED' THEN ROUND(
-                    (ais.TotalAmount - (ais.BalanceDue)) * aio.ExchangeRate,
-                    2
-                )
                 WHEN aps.AmountPaid IS NOT NULL
                 AND acur.Code = 'AED' THEN ROUND(
-                    (
-                        ais.TotalAmount - (ais.BalanceDue + aps.AmountPaid)
-                    ) / 3.6725,
+                    (aps.AmountPaid + ISNULL(ais.AmountPaidSoFar, 0)) / 3.6725,
                     2
                 )
                 WHEN aps.AmountPaid IS NOT NULL
                 AND acur.Code <> 'AED' THEN ROUND(
-                    (
-                        ais.TotalAmount - (ais.BalanceDue + aps.AmountPaid)
-                    ) * aio.ExchangeRate,
+                    (aps.AmountPaid + ISNULL(ais.AmountPaidSoFar, 0)) * aio.ExchangeRate,
+                    2
+                )
+                WHEN aps.AmountPaid IS NULL
+                AND acur.Code = 'AED' THEN ROUND(ais.AmountPaidSoFar / 3.6725, 2)
+                WHEN aps.AmountPaid IS NULL
+                AND acur.Code <> 'AED' THEN ROUND(
+                    (ais.AmountPaidSoFar) * aio.ExchangeRate,
                     2
                 )
             END AS 'Amount Paid So Far(USD)',
