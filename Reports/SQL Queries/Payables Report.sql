@@ -66,6 +66,24 @@ SellerMiscCost AS (
     GROUP BY
         InquiryDetailId
 ),
+SellerInvoiceModifed AS (
+    SELECT
+        aifd.[Description],
+        ROW_NUMBER() OVER (
+            PARTITION BY aic.InvoiceNumber,
+            aid.code
+            ORDER BY
+                aifd.Description
+        ) AS [Rank],
+        aic.*
+    FROM
+        AppInvoiceSellers aic
+        JOIN AppInquiryFuelDetails aifd ON aifd.Id = aic.InquiryFuelDetailId
+        and aifd.IsDeleted = 0
+        and aifd.IsLosted = 0
+        JOIN AppInquiryDetails aid ON aid.Id = aic.InquiryDetailId
+        and aid.IsDeleted = 0
+),
 BookedInvoices AS (
     SELECT
         DISTINCT asel.Name as 'Seller Name',
@@ -401,8 +419,12 @@ DeliveredInvoices AS (
             and aio.SellerId = aifd.SellerId
             JOIN AppCurrencies acur ON acur.Id = aio.CurrencyId
             and aisd.InquiryDetailId = aio.InquiryDetailId
-            LEFT JOIN AppInvoiceSellers ais ON ais.InquiryFuelDetailId = aifd.Id
+            LEFT JOIN SellerInvoiceModifed ais ON ais.InquiryFuelDetailId = aifd.Id
             and ais.IsDeleted = 0
+            and (
+                ais.TotalAmount != 0
+                AND ais.SubTotal != 0
+            )
             LEFT JOIN AppProformaSellers aps ON aps.inquiryfueldetailid = ais.InquiryFuelDetailId
             and aps.IsDeleted = 0 --test
             LEFT JOIN AppSellers asel ON ais.sellerid = asel.id

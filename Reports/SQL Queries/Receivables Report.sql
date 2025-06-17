@@ -362,7 +362,10 @@ Query2 AS (
         and accc.IsDeleted = 0
         LEFT JOIN CustomerInvoiceModified aic ON aic.InquiryFuelDetailId = aifd.Id
         and aic.IsDeleted = 0
-        and aic.Rank = 1
+        and (
+            aic.TotalAmount != 0
+            AND aic.SubTotal != 0
+        )
         LEFT JOIN AppProformaCustomers apc ON apc.inquiryfueldetailid = aic.InquiryFuelDetailId
         and aic.IsDeleted = 0 --test
         JOIN AppVessel av ON av.Id = aid.VesselNominationId
