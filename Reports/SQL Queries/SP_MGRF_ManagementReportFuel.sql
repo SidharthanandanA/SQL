@@ -8,6 +8,7 @@
 -- 1.0 - Initial creation (2025-06-07)
 -- 1.1 - Proforma amounts added to Amount Received (2025-06-09)
 -- 1.2 - Logic Updated to work for 3 fuel scenarios (2025-06-11)
+-- 1.3 - Fuel wise calculations updated (2025-06-18)
 -- ===================================================
 WITH MISubProformaTable AS (
     SELECT
@@ -1510,7 +1511,7 @@ MainAndBookedInvoices AS (
         CONVERT(DATE, COALESCE(ain.StemDate, ain.BookedOn)) AS 'Stem Date',
         CASE
             WHEN aid.InquiryStatus NOT IN (700, 800, 9000) THEN CONVERT(DATE, ad.DeliveryDate)
-            WHEN aid.InquiryStatus IN (700, 800) THEN CONVERT(DATE, aid.DeliveryStartDateNomination)
+            WHEN (aifd.isBooked = 1 AND aifd.IsNominated = 1 AND aifd.IsDelivered = 0) THEN CONVERT(DATE, aid.DeliveryStartDateNomination)
         END AS 'Delivery Date',
         aim.Margin AS 'Margin per MT',
         CASE
@@ -1606,73 +1607,73 @@ MainAndBookedInvoices AS (
         END AS 'Qty',
         aic.InvoiceCode AS 'Customer Invoice Number',
         CASE
-            WHEN aid.InquiryStatus IN (700, 800)
+            WHEN (aifd.isBooked = 1 AND aifd.IsNominated = 1 AND aifd.IsDelivered = 0)
             AND COALESCE(cusCur1.Code, cusCur2.Code) = 'AED' THEN (
                 (ain.QuantityMax * (aim.SellPrice / 3.6725)) + ISNULL(aimc.AmountUsd, 0)
             )
-            WHEN aid.InquiryStatus IN (700, 800)
+            WHEN (aifd.isBooked = 1 AND aifd.IsNominated = 1 AND aifd.IsDelivered = 0)
             AND COALESCE(cusCur1.Code, cusCur2.Code) <> 'AED' THEN (
                 (ain.QuantityMax * aim.SellPriceUsd) + ISNULL(aimc.AmountUsd, 0)
             )
-            WHEN aid.InquiryStatus NOT IN (700, 800)
+            WHEN (aifd.isBooked = 1 AND aifd.IsNominated = 1 AND (aifd.IsDelivered = 1 OR aifd.IsCancelled = 1))
             AND COALESCE(cusCur1.Code, cusCur2.Code) = 'AED' THEN (aic.SubTotal / 3.6725)
             ELSE (aic.SubTotal * aic.ExchangeRate)
         END AS 'Customer Invoice Amount',
         CASE
-            WHEN aid.InquiryStatus IN (700, 800)
+            WHEN (aifd.isBooked = 1 AND aifd.IsNominated = 1 AND aifd.IsDelivered = 0)
             AND COALESCE(cusCur1.Code, cusCur2.Code) = 'AED' THEN (
                 (ain.QuantityMax * (aim.SellPrice / 3.6725)) + ISNULL(aimc.AmountUsd, 0)
             )
-            WHEN aid.InquiryStatus IN (700, 800)
+            WHEN (aifd.isBooked = 1 AND aifd.IsNominated = 1 AND aifd.IsDelivered = 0)
             AND COALESCE(cusCur1.Code, cusCur2.Code) <> 'AED' THEN (
                 (ain.QuantityMax * aim.SellPriceUsd) + ISNULL(aimc.AmountUsd, 0)
             )
-            WHEN aid.InquiryStatus NOT IN (700, 800)
+            WHEN (aifd.isBooked = 1 AND aifd.IsNominated = 1 AND (aifd.IsDelivered = 1 OR aifd.IsCancelled = 1))
             AND COALESCE(cusCur1.Code, cusCur2.Code) = 'AED' THEN (aic.TotalAmount / 3.6725)
             ELSE (aic.TotalAmount * aic.ExchangeRate)
         END AS 'Customer Invoice Total Amount',
         ais.InvoiceNumber AS 'Seller Invoice Number',
         CASE
-            WHEN aid.InquiryStatus IN (700, 800)
+            WHEN (aifd.isBooked = 1 AND aifd.IsNominated = 1 AND aifd.IsDelivered = 0)
             AND COALESCE(selCur1.Code, selCur2.Code) = 'AED' THEN (
                 (ain.QuantityMax * (aim.BuyPrice / 3.6725)) + ISNULL(aims.AmountUsd, 0)
             )
-            WHEN aid.InquiryStatus IN (700, 800)
+            WHEN (aifd.isBooked = 1 AND aifd.IsNominated = 1 AND aifd.IsDelivered = 0)
             AND COALESCE(selCur1.Code, selCur2.Code) <> 'AED' THEN (
                 (ain.QuantityMax * aim.BuyPriceUsd) + ISNULL(aims.AmountUsd, 0)
             )
-            WHEN aid.InquiryStatus NOT IN (700, 800)
+            WHEN (aifd.isBooked = 1 AND aifd.IsNominated = 1 AND (aifd.IsDelivered = 1 OR aifd.IsCancelled = 1))
             AND COALESCE(selCur1.Code, selCur2.Code) = 'AED' THEN (ais.SubTotal / 3.6725)
             ELSE (ais.SubTotal * ais.ExchangeRate)
         END AS 'Seller Invoice Amount',
         CASE
-            WHEN aid.InquiryStatus IN (700, 800)
+            WHEN (aifd.isBooked = 1 AND aifd.IsNominated = 1 AND aifd.IsDelivered = 0)
             AND COALESCE(selCur1.Code, selCur2.Code) = 'AED' THEN (
                 (ain.QuantityMax * (aim.BuyPrice / 3.6725)) + ISNULL(aims.AmountUsd, 0)
             )
-            WHEN aid.InquiryStatus IN (700, 800)
+            WHEN (aifd.isBooked = 1 AND aifd.IsNominated = 1 AND aifd.IsDelivered = 0)
             AND COALESCE(selCur1.Code, selCur2.Code) <> 'AED' THEN (
                 (ain.QuantityMax * aim.BuyPriceUsd) + ISNULL(aims.AmountUsd, 0)
             )
-            WHEN aid.InquiryStatus NOT IN (700, 800)
+            WHEN (aifd.isBooked = 1 AND aifd.IsNominated = 1 AND (aifd.IsDelivered = 1 OR aifd.IsCancelled = 1))
             AND COALESCE(selCur1.Code, selCur2.Code) = 'AED' THEN (ais.TotalAmount / 3.6725)
             ELSE (ais.TotalAmount * ais.ExchangeRate)
         END AS 'Seller Invoice Total Amount',
         CASE
-            WHEN aid.InquiryStatus IN (700, 800) THEN NULL
-            WHEN aid.InquiryStatus NOT IN (700, 800)
+            WHEN (aifd.isBooked = 1 AND aifd.IsNominated = 1 AND aifd.IsDelivered = 0) THEN NULL
+            WHEN (aifd.isBooked = 1 AND aifd.IsNominated = 1 AND (aifd.IsDelivered = 1 OR aifd.IsCancelled = 1))
             AND COALESCE(cusCur1.Code, cusCur1.Code) = 'AED' THEN (aic.AmountRecievedSoFar / 3.6725)
             ELSE (aic.AmountRecievedSoFar * aic.ExchangeRate)
         END AS 'Amount Received',
         CASE
-            WHEN aid.InquiryStatus IN (700, 800) THEN NULL
-            WHEN aid.InquiryStatus NOT IN (700, 800)
+            WHEN (aifd.isBooked = 1 AND aifd.IsNominated = 1 AND aifd.IsDelivered = 0) THEN NULL
+            WHEN (aifd.isBooked = 1 AND aifd.IsNominated = 1 AND (aifd.IsDelivered = 1 OR aifd.IsCancelled = 1))
             AND COALESCE(selCur1.Code, selCur2.Code) = 'AED' THEN (ais.AmountPaidSoFar / 3.6725)
             ELSE (ais.AmountPaidSoFar * ais.ExchangeRate)
         END AS 'Amount Paid',
         CASE
-            WHEN aid.InquiryStatus IN (700, 800) THEN 'Not paid'
-            WHEN aid.InquiryStatus NOT IN (700, 800) THEN CASE
+            WHEN (aifd.isBooked = 1 AND aifd.IsNominated = 1 AND aifd.IsDelivered = 0) THEN 'Not paid'
+            WHEN (aifd.isBooked = 1 AND aifd.IsNominated = 1 AND (aifd.IsDelivered = 1 OR aifd.IsCancelled = 1)) THEN CASE
                 WHEN ais.PayableType IS NULL THEN 'Not paid'
                 WHEN ais.PayableType = 0 THEN 'Not paid'
                 WHEN ais.PayableType = 1 THEN 'Partly paid'
@@ -1680,8 +1681,8 @@ MainAndBookedInvoices AS (
             END
         END AS 'Payment Status',
         CASE
-            WHEN aid.InquiryStatus IN (700, 800) THEN 'Not received'
-            WHEN aid.InquiryStatus NOT IN (700, 800) THEN CASE
+            WHEN (aifd.isBooked = 1 AND aifd.IsNominated = 1 AND aifd.IsDelivered = 0) THEN 'Not received'
+            WHEN (aifd.isBooked = 1 AND aifd.IsNominated = 1 AND (aifd.IsDelivered = 1 OR aifd.IsCancelled = 1)) THEN CASE
                 WHEN aic.ReceivableType IS NULL THEN 'Not received'
                 WHEN aic.ReceivableType = 0 THEN 'Not received'
                 WHEN aic.ReceivableType = 1 THEN 'Partly received'
@@ -1872,8 +1873,8 @@ CustomerInvoices AS (
             AND acur.Code <> 'AED' THEN (aic.AmountReceivedSoFar * aic.ExchangeRate)
         END AS 'Amount Received',
         CASE
-            WHEN aid.InquiryStatus IN (700, 800) THEN 'Not received'
-            WHEN aid.InquiryStatus NOT IN (700, 800) THEN CASE
+            WHEN (aifd.isBooked = 1 AND aifd.IsNominated = 1 AND aifd.IsDelivered = 0) THEN 'Not received'
+            WHEN (aifd.isBooked = 1 AND aifd.IsNominated = 1 AND (aifd.IsDelivered = 1 OR aifd.IsCancelled = 1)) THEN CASE
                 WHEN aic.ReceivableType IS NULL THEN 'Not received'
                 WHEN aic.ReceivableType = 0 THEN 'Not received'
                 WHEN aic.ReceivableType = 1 THEN 'Partly received'
@@ -2181,8 +2182,8 @@ SellerInvoices AS (
             AND acur.Code <> 'AED' THEN (ais.AmountPaidSoFar * ais.ExchangeRate)
         END AS 'Amount Paid',
         CASE
-            WHEN aid.InquiryStatus IN (700, 800) THEN 'Not paid'
-            WHEN aid.InquiryStatus NOT IN (700, 800) THEN CASE
+            WHEN (aifd.isBooked = 1 AND aifd.IsNominated = 1 AND aifd.IsDelivered = 0) THEN 'Not paid'
+            WHEN (aifd.isBooked = 1 AND aifd.IsNominated = 1 AND (aifd.IsDelivered = 1 OR aifd.IsCancelled = 1)) THEN CASE
                 WHEN ais.InvoiceType IS NULL THEN 'Not paid'
                 WHEN ais.PayableType = 0 THEN 'Not paid'
                 WHEN ais.PayableType = 1 THEN 'Partly paid'
