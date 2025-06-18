@@ -20,6 +20,7 @@
  Receivables and Payables report - Invoice date
  
  05-05-2025 - Added CustomerGroupName to this
+ 18-06-2025 - Updated logics for Amount Paid So Far and Outstanding Amounts
  
  */
 WITH BookedAndPartlyBookedCTE AS(
@@ -91,15 +92,7 @@ BookedInvoices AS (
         ab.Name AS 'Broker Name',
         asg.Name as 'Seller Group',
         aid.Code AS 'Job Number',
-        --CASE 
-        --	WHEN bpb.SellerPaymentTerm = 2 THEN aps.InvoiceNumber
-        --	WHEN bpb.SellerPaymentTerm <> 2 THEN NULL
-        --      END AS 'Seller Invoice Number',
         NULL AS 'Seller Invoice Number',
-        --CASE 
-        --	WHEN bpb.SellerPaymentTerm = 2 THEN CONVERT(DATE, aps.PaymentDueDate)
-        --	WHEN bpb.SellerPaymentTerm <> 2 THEN CONVERT(DATE, DATEADD(DAY, bpb.SellerCreditTerms, aid.DeliveryStartDateNomination))
-        --      END AS 'Payment Due Date',
         CASE
             WHEN aps.PaymentDueDate IS NULL THEN CONVERT(
                 DATE,
@@ -112,11 +105,6 @@ BookedInvoices AS (
             ELSE CONVERT(DATE, aps.PaymentDueDate)
         END AS 'Payment Due Date',
         NULL AS 'Invoice Date',
-        --DATEDIFF(DAY, CONVERT(DATE, DATEADD(DAY, bpb.SellerCreditTerms, aid.DeliveryStartDateNomination)), GETDATE()) as 'Overdue days',
-        --CASE 
-        --	WHEN bpb.SellerPaymentTerm = 2 THEN DATEDIFF(DAY, CONVERT(DATE,aps.PaymentDueDate), GETDATE())
-        --	WHEN bpb.SellerPaymentTerm <> 2 THEN DATEDIFF(DAY, CONVERT(DATE, DATEADD(DAY, bpb.SellerCreditTerms,aid.DeliveryStartDateNomination)), GETDATE())
-        --      END AS 'Overdue days',
         NULL AS 'Overdue days',
         CASE
             WHEN aps.BalanceDue IS NOT NULL
@@ -228,10 +216,6 @@ BookedInvoices AS (
             AND acur.Code <> 'AED' THEN bpb.QuantityMax * aim.BuyPriceUsd + smc.SellerMiscCost
             ELSE 0
         END AS 'Invoice Amount(USD)',
-        --CASE 
-        --	WHEN bpb.SellerPaymentTerm = 2 THEN ROUND(aps.AmountPaid,2)
-        --	WHEN bpb.SellerPaymentTerm <> 2 THEN NULL
-        --      END AS 'Amount Paid So Far',
         CASE
             WHEN aps.AmountPaid IS NOT NULL
             AND (
@@ -264,7 +248,6 @@ BookedInvoices AS (
         'Uninvoiced' AS 'Invoice Status',
         NULL AS 'Cancellation Status',
         CASE
-            --WHEN bpb.SellerPaymentTerm = 2 THEN 'Booked (CIA)'
             WHEN aid.InquiryStatus = 0 THEN 'Draft'
             WHEN aid.InquiryStatus = 100 THEN 'Raised By Client'
             WHEN aid.InquiryStatus = 200 THEN 'Sent For Approval'
@@ -285,7 +268,7 @@ BookedInvoices AS (
     FROM
         BookedAndPartlyBookedCTE bpb
         JOIN AppInquiryDetails aid ON bpb.InquiryDetailId = aid.Id
-        JOIN AppInquiryFuelDetails aifd ON aid.Id = aifd.InquiryDetailId --LEFT JOIN AppProformaSellers aps ON aps.InquiryNominationId = bpb.Id AND aps.IsDeleted = 0
+        JOIN AppInquiryFuelDetails aifd ON aid.Id = aifd.InquiryDetailId
         LEFT JOIN AppSellers asel ON asel.Id = aifd.SellerId
         LEFT JOIN AppSellerGroups asg ON asg.Id = asel.SellerGroupId
         LEFT JOIN SellerMiscCost smc ON smc.InquiryDetailId = aid.Id
@@ -341,27 +324,55 @@ DeliveredInvoices AS (
             END as 'Invoice Amount(USD)',
             CASE
                 WHEN aps.AmountPaid IS NOT NULL THEN ROUND(
-                    aps.AmountPaid + ISNULL(ais.AmountPaidSoFar, 0),
+                    aps.AmountPaid + ISNULL(
+                        NULLIF(ais.TotalAmount, NULL) - NULLIF(ais.BalanceDue, NULL),
+                        0
+                    ),
                     2
                 )
-                WHEN aps.AmountPaid IS NULL THEN ROUND(ais.AmountPaidSoFar, 2)
+                WHEN aps.AmountPaid IS NULL THEN ROUND(
+                    ISNULL(
+                        NULLIF(ais.TotalAmount, NULL) - NULLIF(ais.BalanceDue, NULL),
+                        0
+                    ),
+                    2
+                )
             END AS 'Amount Paid So Far',
             CASE
                 WHEN aps.AmountPaid IS NOT NULL
                 AND acur.Code = 'AED' THEN ROUND(
-                    (aps.AmountPaid + ISNULL(ais.AmountPaidSoFar, 0)) / 3.6725,
+                    (
+                        aps.AmountPaid + ISNULL(
+                            NULLIF(ais.TotalAmount, NULL) - NULLIF(ais.BalanceDue, NULL),
+                            0
+                        )
+                    ) / 3.6725,
                     2
                 )
                 WHEN aps.AmountPaid IS NOT NULL
                 AND acur.Code <> 'AED' THEN ROUND(
-                    (aps.AmountPaid + ISNULL(ais.AmountPaidSoFar, 0)) * aio.ExchangeRate,
+                    (
+                        aps.AmountPaid + ISNULL(
+                            NULLIF(ais.TotalAmount, NULL) - NULLIF(ais.BalanceDue, NULL),
+                            0
+                        )
+                    ) * aio.ExchangeRate,
                     2
                 )
                 WHEN aps.AmountPaid IS NULL
-                AND acur.Code = 'AED' THEN ROUND(ais.AmountPaidSoFar / 3.6725, 2)
+                AND acur.Code = 'AED' THEN ROUND(
+                    ISNULL(
+                        NULLIF(ais.TotalAmount, NULL) - NULLIF(ais.BalanceDue, NULL),
+                        0
+                    ) / 3.6725,
+                    2
+                )
                 WHEN aps.AmountPaid IS NULL
                 AND acur.Code <> 'AED' THEN ROUND(
-                    (ais.AmountPaidSoFar) * aio.ExchangeRate,
+                    ISNULL(
+                        NULLIF(ais.TotalAmount, NULL) - NULLIF(ais.BalanceDue, NULL),
+                        0
+                    ) * aio.ExchangeRate,
                     2
                 )
             END AS 'Amount Paid So Far(USD)',
@@ -445,8 +456,6 @@ DeliveredInvoices AS (
             or aid.InquiryStatus = 900
             or aid.InquiryStatus = 1000
             or aid.InquiryStatus = 9000
-            and aics.CancelTypes = 0
-            and aics.IsDeleted = 0
     )
 ),
 unionquery AS (
@@ -510,43 +519,49 @@ GroupedInvoices AS (
         [Cancellation Status],
         [Job Status],
         [Payment Status]
+),
+UnionQueryCTE AS (
+    SELECT
+        [Seller Name],
+        [Customer Group Name],
+        [Broker Name],
+        [Seller Group],
+        [Job Number],
+        [Seller Invoice Number],
+        [Payment Due Date],
+        [Invoice Date],
+        CASE
+            WHEN [Job Status] = 'Booked'
+            OR [Job Status] = 'Partly Booked' THEN NULL
+            WHEN [Invoice Status] = 'Paid' THEN 0
+            ELSE [Overdue days]
+        END AS 'Overdue days',
+        [Outstanding Amount],
+        [Outstanding Amount(USD)],
+        [Invoice Amount],
+        [Invoice Amount(USD)],
+        [Amount Paid So Far],
+        [Amount Paid So Far(USD)],
+        Vessel,
+        [Port Name],
+        Assignee,
+        [Delivery Date],
+        [Expected Payment Date],
+        Currency,
+        [Invoice Status],
+        [Cancellation Status],
+        [Job Status],
+        [Payment Status],
+        COALESCE([Expected Payment Date], [Payment Due Date]) AS 'Filter Date'
+    FROM
+        GroupedInvoices
+    WHERE
+        [Seller Name] IS NOT NULL --and [Job Number] = 'G3489' --AND [Invoice Status] <> 'Paid'
 )
 SELECT
-    [Seller Name],
-    [Customer Group Name],
-    [Broker Name],
-    [Seller Group],
-    [Job Number],
-    [Seller Invoice Number],
-    [Payment Due Date],
-    [Invoice Date],
-    CASE
-        WHEN [Job Status] = 'Booked'
-        OR [Job Status] = 'Partly Booked' THEN NULL
-        WHEN [Invoice Status] = 'Paid' THEN 0
-        ELSE [Overdue days]
-    END AS 'Overdue days',
-    [Outstanding Amount],
-    [Outstanding Amount(USD)],
-    [Invoice Amount],
-    [Invoice Amount(USD)],
-    [Amount Paid So Far],
-    [Amount Paid So Far(USD)],
-    Vessel,
-    [Port Name],
-    Assignee,
-    [Delivery Date],
-    [Expected Payment Date],
-    Currency,
-    [Invoice Status],
-    [Cancellation Status],
-    [Job Status],
-    [Payment Status],
-    COALESCE([Expected Payment Date], [Payment Due Date]) AS 'Filter Date'
+    *
 FROM
-    GroupedInvoices
-WHERE
-    [Seller Name] IS NOT NULL --and [Job Number] = 'G3489' --AND [Invoice Status] <> 'Paid'
+    UnionQueryCTE
 ORDER BY
     CAST(
         SUBSTRING([Job Number], 2, LEN([Job Number]) - 1) AS INT
