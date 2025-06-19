@@ -379,6 +379,8 @@ DeliveredInvoices AS (
         or aid.InquiryStatus = 900
         or aid.InquiryStatus = 1000
         or aid.InquiryStatus = 9000
+        and aics.CancelTypes = 0
+        and aics.IsDeleted = 0
 ),
 unionquery AS (
     SELECT
