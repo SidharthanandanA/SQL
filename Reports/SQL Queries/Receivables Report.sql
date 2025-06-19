@@ -18,6 +18,7 @@
  --14-01-2025 - Changes Made - Overdue days set to 0 when invoice status is received
  --04-08-2025 - Changes Made - Accounted for Merged Customers
  --18-06-2025 - Updated logics for Amount Paid So Far and Outstanding Amounts
+ 19-06-2025 - For cancelled stems, update delivery date as the approved on date
  
  */
 WITH BookedAndPartlyBookedCTE AS(
@@ -311,7 +312,16 @@ DeliveredInvoices AS (
         av.Name AS Vessel,
         ap.Name AS PortName,
         aup.Name AS Assignee,
-        CONVERT(DATE, ad.DeliveryDate) AS DeliveryDate,
+        CONVERT(
+            DATE,
+            CASE
+                WHEN (
+                    aics.CancelTypes = 0
+                    AND aifd.IsCancelled = 1
+                ) THEN aic.ApprovedOn
+                ELSE ad.DeliveryDate
+            END
+        ) AS 'DeliveryDate',
         CONVERT(DATE, aic.ExpectedDueDate) AS ExpectedPaymentReceivedDate,
         CASE
             WHEN aim.CurrencyId IS NOT NULL THEN acur.Code

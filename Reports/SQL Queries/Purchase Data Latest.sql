@@ -21,6 +21,7 @@
  17-03-2025 --Duplicate values removed
  21-03-2025 --Amount Paid Date modified
  09-06-2025 - SellerNomination and CustomerNomination Sent On Date added
+ 19-06-2025 - For cancelled stems, update delivery date as the approved on date
  
  Last Modifiied By - Sidharth A
  Last Modifiied On : 17-03-2025 12:20 IST
@@ -168,7 +169,16 @@ GSData AS (
         CONVERT(DATETIME, ain.BookedOn) AS 'Seller Nomination Sent On',
         CONVERT(DATETIME, ain.NominatedOn) AS 'Customer Nomination Sent On',
         CONVERT(DATE, aid.DeliveryStartDateNomination) AS 'Delivery start date',
-        CONVERT(DATE, ad.DeliveryDate) AS 'Delivery date',
+        CONVERT(
+            DATE,
+            CASE
+                WHEN (
+                    aics.CancelTypes = 0
+                    AND aifd.IsCancelled = 1
+                ) THEN ais.ApprovedOn
+                ELSE ad.DeliveryDate
+            END
+        ) AS 'Delivery date',
         COALESCE(
             asur.Name,
             agen.Name,

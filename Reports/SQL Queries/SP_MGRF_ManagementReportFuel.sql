@@ -9,6 +9,7 @@
 -- 1.1 - Proforma amounts added to Amount Received (2025-06-09)
 -- 1.2 - Logic Updated to work for 3 fuel scenarios (2025-06-11)
 -- 1.3 - Fuel wise calculations updated (2025-06-18)
+-- 1.4 - For cancelled stems, update delivery date as the approved on date(2025-06-19)
 -- ===================================================
 WITH MISubProformaTable AS (
     SELECT
@@ -1511,7 +1512,17 @@ MainAndBookedInvoices AS (
         CONVERT(DATE, COALESCE(ain.StemDate, ain.BookedOn)) AS 'Stem Date',
         CASE
             WHEN aid.InquiryStatus NOT IN (700, 800, 9000) THEN CONVERT(DATE, ad.DeliveryDate)
-            WHEN (aifd.isBooked = 1 AND aifd.IsNominated = 1 AND aifd.IsDelivered = 0) THEN CONVERT(DATE, aid.DeliveryStartDateNomination)
+            WHEN (
+                aifd.isBooked = 1
+                AND aifd.IsNominated = 1
+                AND aifd.IsDelivered = 0
+            ) THEN CONVERT(DATE, aid.DeliveryStartDateNomination)
+            WHEN (
+                aifd.isBooked = 1
+                AND aifd.IsNominated = 1
+                AND aifd.IsCancelled = 1
+                AND aics.CancelTypes = 0
+            ) THEN CONVERT(DATE, aic.ApprovedOn)
         END AS 'Delivery Date',
         aim.Margin AS 'Margin per MT',
         CASE
@@ -2073,7 +2084,16 @@ CustomerInvoices AS (
             WHEN aics.CancelTypes = 1 THEN 'Without Penalty'
         END AS 'Cancellation Status',
         CONVERT(DATE, COALESCE(ain.StemDate, ain.BookedOn)) AS 'Stem Date',
-        CONVERT(DATE, ad.DeliveryDate) AS 'Delivery Date',
+        CONVERT(
+            DATE,
+            CASE
+                WHEN (
+                    aics.CancelTypes = 0
+                    AND aifd.IsCancelled = 1
+                ) THEN aic.ApprovedOn
+                ELSE ad.DeliveryDate
+            END
+        ) AS 'Delivery Date',
         aim.Margin AS 'Margin per MT',
         COALESCE(acurr.Code, acur.Code) AS 'Selling Currency',
         ROW_NUMBER() OVER (
@@ -2382,7 +2402,16 @@ SellerInvoices AS (
             WHEN aics.CancelTypes = 1 THEN 'Without Penalty'
         END AS 'Cancellation Status',
         CONVERT(DATE, COALESCE(ain.StemDate, ain.BookedOn)) AS 'Stem Date',
-        CONVERT(DATE, ad.DeliveryDate) AS 'Delivery Date',
+        CONVERT(
+            DATE,
+            CASE
+                WHEN (
+                    aics.CancelTypes = 0
+                    AND aifd.IsCancelled = 1
+                ) THEN ais.ApprovedOn
+                ELSE ad.DeliveryDate
+            END
+        ) AS 'Delivery Date',
         aim.Margin AS 'Margin per MT',
         COALESCE(acurr.Code, acur.Code) AS 'Buying Currency',
         ROW_NUMBER() OVER (

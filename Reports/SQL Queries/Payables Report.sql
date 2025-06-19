@@ -21,6 +21,7 @@
  
  05-05-2025 - Added CustomerGroupName to this
  18-06-2025 - Updated logics for Amount Paid So Far and Outstanding Amounts
+ 19-06-2025 - For cancelled stems, update delivery date as the approved on date
  
  */
 WITH BookedAndPartlyBookedCTE AS(
@@ -379,7 +380,16 @@ DeliveredInvoices AS (
             av.Name as 'Vessel',
             ap.Name as 'Port Name',
             aup.Name AS 'Assignee',
-            CONVERT(DATE, ad.DeliveryDate) AS 'Delivery Date',
+            CONVERT(
+                DATE,
+                CASE
+                    WHEN (
+                        aics.CancelTypes = 0
+                        AND aifd.IsCancelled = 1
+                    ) THEN ais.ApprovedOn
+                    ELSE ad.DeliveryDate
+                END
+            ) AS 'Delivery Date',
             CONVERT(DATE, ais.ExpectedDueDate) AS 'Expected Payment Date',
             acur.Code as 'Currency',
             CASE

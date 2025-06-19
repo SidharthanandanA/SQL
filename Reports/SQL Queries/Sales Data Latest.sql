@@ -34,6 +34,7 @@
  10. Customer Brokerage(USD)
  09-06-2025 - SellerNomination and CustomerNomination Sent On Date added
  13-06-2025 - Removed the order by clause
+ 19-06-2025 - For cancelled stems, update delivery date as the approved on date
  
  Added the above columns
  */
@@ -151,7 +152,16 @@ ExpCTE AS (
         CONVERT(DATETIME, ain.BookedOn) AS 'Seller Nomination Sent On',
         CONVERT(DATETIME, ain.NominatedOn) AS 'Customer Nomination Sent On',
         CONVERT(DATE, aid.DeliveryStartDateNomination) AS 'Delivery start date',
-        CONVERT(DATE, ad.DeliveryDate) AS 'Delivery date',
+        CONVERT(
+            DATE,
+            CASE
+                WHEN (
+                    aics.CancelTypes = 0
+                    AND aifd.IsCancelled = 1
+                ) THEN aic.ApprovedOn
+                ELSE ad.DeliveryDate
+            END
+        ) AS 'Delivery date',
         ac.Name AS 'Customer name',
         acg.Name AS 'Customer group',
         aco.Name AS 'Incorporation Jurisdiction',
