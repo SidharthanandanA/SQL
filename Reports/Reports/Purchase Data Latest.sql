@@ -19,6 +19,7 @@
  13-02-2025 --Modified AED values to be divided by 3.6725
  17-03-2025 --Duplicate values removed
  21-03-2025 --Amount Paid Date modified
+ 07-07-2025 - Order by clause modified
  
  Last Modifiied By - Sidharth A
  Last Modifiied On : 17-03-2025 12:20 IST
@@ -26,6 +27,7 @@
  Uploaded On PROD : 17-03-2025 12:25 IST
  
  */
+DROP TABLE IF EXISTS #PurchaseDataLatestUnionTable;
 WITH InquiryMiscCostCustomer AS (
     Select
         aimc.InquiryDetailId,
@@ -708,23 +710,30 @@ UNIONALLCTE AS (
     from
         GSData
 )
-Select
-    *
-from
-    UNIONALLCTE --where [Data source] = 'GS' and DatePaid is null and [Payment Status] = 'Paid'
-ORDER BY
+SELECT
+    *,
     CASE
         WHEN [Data Source] = 'GS' THEN 0
         ELSE 1
-    END,
+    END AS SortIsGS,
     CASE
         WHEN [Stem date] IS NULL THEN 0
         ELSE 1
-    END,
-    [Stem date] DESC,
+    END AS SortHasStemDate,
     CASE
-        WHEN LEN([Job code]) > 1 THEN CAST(
+        WHEN LEN([Job code]) > 1 THEN TRY_CAST(
             SUBSTRING([Job code], 2, LEN([Job code]) - 1) AS INT
         )
-        ELSE 0 -- or any other default value you consider appropriate
-    END DESC
+        ELSE 0
+    END AS SortJobCodeNum INTO #PurchaseDataLatestUnionTable
+FROM
+    UNIONALLCTE
+SELECT
+    *
+FROM
+    #PurchaseDataLatestUnionTable
+ORDER BY
+    SortIsGS,
+    SortHasStemDate,
+    [Stem date] DESC,
+    SortJobCodeNum DESC

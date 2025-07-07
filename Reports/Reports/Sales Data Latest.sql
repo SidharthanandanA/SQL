@@ -33,7 +33,9 @@
  9. Customer Brokerage
  10. Customer Brokerage(USD)
  Added the above columns
+ 07-07-2025 - Order by clause modified
  */
+DROP TABLE IF EXISTS #SalesDataLatestUnionTable;
 WITH InquiryMiscCostCustomer AS (
     Select
         aimc.InquiryDetailId,
@@ -683,23 +685,30 @@ UnionCTE AS (
     from
         ExpCTE
 )
-Select
-    *
-from
-    UnionCTE --where [Job Code] IN ('G3254')
-ORDER BY
+SELECT
+    *,
     CASE
         WHEN [Data Source] = 'GS' THEN 0
         ELSE 1
-    END,
+    END AS SortIsGS,
     CASE
         WHEN [Stem date] IS NULL THEN 0
         ELSE 1
-    END,
-    [Stem date] DESC,
+    END AS SortHasStemDate,
     CASE
-        WHEN LEN([Job code]) > 1 THEN CAST(
+        WHEN LEN([Job code]) > 1 THEN TRY_CAST(
             SUBSTRING([Job code], 2, LEN([Job code]) - 1) AS INT
         )
         ELSE 0
-    END DESC
+    END AS SortJobCodeNum INTO #SalesDataLatestUnionTable
+FROM
+    UnionCTE
+SELECT
+    *
+FROM
+    #SalesDataLatestUnionTable
+ORDER BY
+    SortIsGS,
+    SortHasStemDate,
+    [Stem date] DESC,
+    SortJobCodeNum DESC
