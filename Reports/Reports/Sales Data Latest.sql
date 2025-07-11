@@ -505,7 +505,7 @@ ExpCTE AS (
             WHEN aifd.TradeType = 0 THEN 'spot'
             WHEN aifd.TradeType = 1 THEN 'Contract'
         END AS 'Trade type',
-        COALESCE(aic.BuyerPaymentTerm, ain.BuyerCreditTerms) AS 'CustomerPaymentTerms',
+        COALESCE(aic.BuyerCreditTerms, ain.BuyerCreditTerms) AS 'CustomerPaymentTerms',
         CASE
             WHEN aic.ReceivableType = 0 THEN 'Not received'
             WHEN aic.ReceivableType = 1 THEN 'Partly received'

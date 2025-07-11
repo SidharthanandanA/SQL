@@ -519,7 +519,7 @@ GSData AS (
             WHEN aifd.TradeType = 0 THEN 'spot'
             WHEN aifd.TradeType = 1 THEN 'Contract'
         END AS 'TradeType',
-        COALESCE(ais.SellerPaymentTerm, ain.SellerCreditTerms) AS 'SellerPaymentTerms',
+        COALESCE(ais.SellerCreditTerms, ain.SellerCreditTerms) AS 'SellerPaymentTerms',
         CASE
             WHEN ais.PayableType = 0 THEN 'Not paid'
             WHEN ais.PayableType = 1 THEN 'Partly paid'
