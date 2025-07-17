@@ -35,7 +35,106 @@
  Added the above columns
  07-07-2025 - Order by clause modified
  */
-DROP TABLE IF EXISTS #SalesDataLatestUnionTable;
+IF OBJECT_ID('tempdb..#SalesDataLatestUnionTable') IS NULL BEGIN CREATE TABLE #SalesDataLatestUnionTable (
+-- You must define the columns explicitly here to preserve types, example:
+[Data source] NVARCHAR(200),
+[Job code] NVARCHAR(200),
+[Vessel name] NVARCHAR(200),
+[Port name] NVARCHAR(200),
+[Stem date] DATE,
+[Seller Nomination Sent On] DATETIME,
+[Customer Nomination Sent On] DATETIME,
+[Delivery start date] DATE,
+[Delivery date] DATE,
+[Customer name] NVARCHAR(200),
+[Customer group] NVARCHAR(200),
+[Incorporation Jurisdiction] NVARCHAR(200),
+[Supplier name] NVARCHAR(200),
+[Seller Broker Name] NVARCHAR(200),
+[Customer Broker Name] NVARCHAR(200),
+[Seller Broker Unit/Lumpsum] VARCHAR(200),
+[Seller Broker Unit] VARCHAR(200),
+[Customer Broker Unit/Lumpsum] VARCHAR(200),
+[Customer Broker Unit] VARCHAR(200),
+[Invoice number] NVARCHAR(200),
+[Invoice date] DATE,
+[Invoice Type] VARCHAR(200),
+[Job status] NVARCHAR(200),
+[Cancellation Status] VARCHAR(200),
+[Inquiry recieved date] DATE,
+[Payment due date] DATE,
+[Expected Payment Received Date] DATE,
+[Date Received] DATE,
+[Quantity min] FLOAT,
+[Quantity min(MT)] FLOAT,
+[Quantity max] FLOAT,
+[Quantity max(MT)] FLOAT,
+[BdnBillingQuantity] FLOAT,
+[BDN Unit] VARCHAR(200),
+[BDNQty(MT)] FLOAT,
+[Fuel name] NVARCHAR(200),
+[Grade spec name] NVARCHAR(200),
+[Selling price] FLOAT,
+[Selling Price Currency type] NVARCHAR(200),
+[Selling Price(USD)] FLOAT,
+[Buying price] FLOAT,
+[Buying Price Currency type] NVARCHAR(200),
+[Buying Price(USD)] FLOAT,
+[CustomerBrokerage] FLOAT,
+[Customer Currency] NVARCHAR(200),
+[Customer Brokerage(USD)] FLOAT,
+[SellerBrokerage] FLOAT,
+[Seller Currency] NVARCHAR(200),
+[Seller Brokerage(USD)] FLOAT,
+[Margin] FLOAT,
+[MiscCostItemOneName] NVARCHAR(200),
+[MiscCostItemOneAmount] FLOAT,
+[MiscCostItemTwoName] NVARCHAR(200),
+[MiscCostItemTwoAmount] FLOAT,
+[MiscCostItemThreeName] NVARCHAR(200),
+[MiscCostItemThreeAmount] FLOAT,
+[MiscCostItemFourName] NVARCHAR(200),
+[MiscCostItemFourAmount] FLOAT,
+[MiscCostItemFiveName] NVARCHAR(200),
+[MiscCostItemFiveAmount] FLOAT,
+[Customer invoice total amount] FLOAT,
+[Customer invoice total amount(USD)] FLOAT,
+[Customer invoice sub total] FLOAT,
+[Customer invoice sub total(USD)] FLOAT,
+[Amount received] FLOAT,
+[Amount received(USD)] FLOAT,
+[Customer Grade Misc Cost] FLOAT,
+[CustomerInvAddlCost] FLOAT,
+[Customer Currency Type] NVARCHAR(200),
+[Seller invoice total amount] FLOAT,
+[Seller invoice total amount(USD)] FLOAT,
+[Seller invoice sub total] FLOAT,
+[Seller invoice sub total(USD)] FLOAT,
+[Seller Grade Misc Cost] FLOAT,
+[SellerInvAddlCost] FLOAT,
+[Seller Currency Type] NVARCHAR(200),
+[Assignee] NVARCHAR(200),
+[TradeType] NVARCHAR(200),
+[CustomerPaymentTerms] INT,
+[Payment Status] VARCHAR(200),
+[CreationTime] DATE,
+[LastModificationTime] DATE,
+[SortIsGS] INT,
+[SortHasStemDate] INT,
+[SortJobCodeNum] INT
+);
+
+CREATE NONCLUSTERED INDEX IX_SalesData_SortOptimization ON #SalesDataLatestUnionTable (
+SortIsGS ASC,
+SortHasStemDate ASC,
+[Stem date] DESC,
+SortJobCodeNum DESC
+);
+
+END
+ELSE BEGIN TRUNCATE TABLE #SalesDataLatestUnionTable;
+END;
+
 WITH InquiryMiscCostCustomer AS (
     Select
         aimc.InquiryDetailId,
@@ -147,6 +246,8 @@ ExpCTE AS (
         av.Name AS 'Vessel name',
         ap.Name AS 'Port name',
         CONVERT(DATE, COALESCE(ain.StemDate, ain.BookedOn)) AS 'Stem date',
+        CONVERT(DATETIME, ain.BookedOn) AS 'Seller Nomination Sent On',
+        CONVERT(DATETIME, ain.NominatedOn) AS 'Customer Nomination Sent On',
         CONVERT(DATE, aid.DeliveryStartDateNomination) AS 'Delivery start date',
         CONVERT(DATE, ad.DeliveryDate) AS 'Delivery date',
         ac.Name AS 'Customer name',
@@ -582,9 +683,9 @@ HistoricalData AS (
         VesselName AS 'Vessel name',
         PortName AS 'Port name',
         CONVERT(date, StemDate) AS 'Stem date',
+        NULL AS 'Seller Nomination Sent On',
+        NULL AS 'Customer Nomination Sent On',
         CONVERT(date, DeliveryStartDate) AS 'Delivery start date',
-        --FORMAT(DeliveryStartDate, 'dd-MMM-yyyy') AS 'Delivery start date',
-        --FORMAT(DeliveryDate, 'yyyy-MM-dd') AS 'Delivery date',
         CONVERT(date, DeliveryDate) AS 'Delivery date',
         CustomerName AS 'Customer name',
         NULL AS 'Customer group',
@@ -684,7 +785,9 @@ UnionCTE AS (
         *
     from
         ExpCTE
-)
+) -- Then populate the table as before:
+INSERT INTO
+    #SalesDataLatestUnionTable
 SELECT
     *,
     CASE
@@ -700,15 +803,18 @@ SELECT
             SUBSTRING([Job code], 2, LEN([Job code]) - 1) AS INT
         )
         ELSE 0
-    END AS SortJobCodeNum INTO #SalesDataLatestUnionTable
+    END AS SortJobCodeNum
 FROM
-    UnionCTE
+    UnionCTE;
+
 SELECT
     [Data source],
     [Job code],
     [Vessel name],
     [Port name],
     [Stem date],
+    [Seller Nomination Sent On],
+    [Customer Nomination Sent On],
     [Delivery start date],
     [Delivery date],
     [Customer name],
