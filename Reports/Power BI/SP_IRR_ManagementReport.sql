@@ -2827,7 +2827,7 @@ ExampleCTE AS (
         UserId,
         UserEmail,
         Buyer,
-        [Payment performance],
+        AVG([Payment performance]) AS [Payment performance],
         [Customer In Out],
         [Job Status],
         ROUND(
@@ -2932,7 +2932,6 @@ ExampleCTE AS (
         UserId,
         UserEmail,
         Buyer,
-        [Payment performance],
         [Customer In Out],
         [Job Status],
         sc.[Selling Currency],
